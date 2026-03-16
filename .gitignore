@@ -14,9 +14,6 @@ Thumbs.db
 *.swp
 *.swo
 
-# Cursor (exclude from repo)
-.cursor/
-
 # Logs
 *.log
 logs/
