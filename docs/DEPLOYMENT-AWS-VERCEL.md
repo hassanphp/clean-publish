@@ -87,10 +87,11 @@ export WEB_CONCURRENCY=2   # same as -w if you use Gunicorn’s default
 ## Vercel (frontend)
 
 1. **Connect repo:** Import the repo; set root to **ai-frontend** (or use a monorepo config).
-2. **Env var:**  
+2. **Env var:** In Vercel project → Settings → Environment Variables, add:  
    `NEXT_PUBLIC_API_URL` = `https://api.carveo.eu`  
-   (or your backend URL with HTTPS.)
-3. **CORS:** Backend allows `https://api.carveo.eu` and your Vercel origin; add more in `_cors_origins` in `ai-backend/app/main.py` if needed.
+   (Required so the frontend calls the remote backend.)
+3. **Local:** `ai-frontend/.env.example` and `.env.local` are set to `https://api.carveo.eu`; `npm run dev` uses the remote API.
+4. **CORS:** Backend allows `https://api.carveo.eu`, `https://carveo.eu`, `https://www.carveo.eu` and your Vercel origin; add more in `_cors_origins` in `ai-backend/app/main.py` if needed.
 
 ---
 
@@ -112,4 +113,17 @@ Backend-only (EC2 + ALB + RDS + Redis) ≈ **\$100–110/mo**; reduce with reser
 ## Summary
 
 - **EC2:** Use **t3.large** (2 vCPU, 8 GB RAM) so the backend doesn’t break under normal production load; run with **Gunicorn + Uvicorn workers** (e.g. 2–4 workers) and a 300s timeout.
-- **Frontend:** Deploy on **Vercel** with `NEXT_PUBLIC_API_URL` pointing at your HTTPS backend; add Vercel origin to backend CORS.
+- **Frontend:** Deploy on **Vercel** with `NEXT_PUBLIC_API_URL` pointing at your HTTPS backend. Backend CORS allows `*.vercel.app` and carveo.eu.
+
+---
+
+## Deployment checklist (continue after backend is live)
+
+1. **Backend (EC2)** – Done: api.carveo.eu, Postgres, Redis, HTTPS, admin user seeded.
+2. **Frontend (Vercel)**  
+   - Import repo, set root to **ai-frontend**.  
+   - Add env: **NEXT_PUBLIC_API_URL** = `https://api.carveo.eu`.  
+   - Deploy. CORS allows any `https://*.vercel.app` origin.
+3. **Login** – Use seeded admin: **dealer@domain.com** / **Admin@321** (100 credits).
+4. **Custom domain (optional)** – In Vercel, add carveo.eu or www.carveo.eu and point DNS as instructed.
+5. **API keys on EC2** – Edit `/home/ubuntu/clean-publish/ai-backend/.env` with real `OPENAI_API_KEY`, `REPLICATE_API_TOKEN`, `FAL_KEY` for image processing, then `sudo systemctl restart carveo-backend`.

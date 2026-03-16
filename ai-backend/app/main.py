@@ -62,9 +62,12 @@ _cors_origins = [
     "https://carveo.eu",
     "https://www.carveo.eu",
 ]
+# Allow any Vercel preview/production (e.g. https://clean-publish.vercel.app)
+_cors_origin_regex = r"^https://[\w\-]+\.vercel\.app$"
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins,
+    allow_origin_regex=_cors_origin_regex,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
