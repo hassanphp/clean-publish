@@ -58,6 +58,9 @@ _cors_origins = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
     "https://bismillah-image-ai-frontend-jgdgtnysta-uc.a.run.app",
+    "https://api.carveo.eu",
+    "https://carveo.eu",
+    "https://www.carveo.eu",
 ]
 app.add_middleware(
     CORSMiddleware,
