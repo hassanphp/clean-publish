@@ -1,0 +1,55 @@
+# Environment & secrets
+.env
+.env.local
+.env.*.local
+*.local
+!.env.example
+
+# Virtual environment
+venv/
+.venv/
+env/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Database
+*.db
+*.sqlite3
+*.sqlite
+
+# Alembic
+alembic/versions/*.pyc
+
+# Testing
+.coverage
+htmlcov/
+.pytest_cache/
+.tox/
+.nox/
+
+# Build & distribution
+*.egg-info/
+*.egg
+dist/
+build/
+eggs/
+wheels/
+
+# Logs
+*.log
+logs/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Backups & accidental files
+*.backup*
+=*

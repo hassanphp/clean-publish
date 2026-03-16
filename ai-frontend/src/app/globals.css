@@ -1,0 +1,70 @@
+@import "tailwindcss";
+
+:root {
+  --background: #0c0c0c;
+  --foreground: #fafafa;
+  --accent: #f59e0b;
+  --accent-hover: #fbbf24;
+  --surface: #18181b;
+  --border: #27272a;
+  --primary: #0066FF;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+/* Dark Mode - Default */
+html.dark {
+  --background: #000000;
+  --foreground: #ffffff;
+  --card: #0a0a0a;
+  --border: #1a1a1a;
+  color-scheme: dark;
+}
+
+/* Light Mode */
+html.light {
+  --background: #ffffff;
+  --foreground: #000000;
+  --card: #f8f9fa;
+  --border: #e9ecef;
+  color-scheme: light;
+}
+
+html {
+  overflow-x: hidden;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+html::-webkit-scrollbar {
+  display: none;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans), system-ui, sans-serif;
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+body::-webkit-scrollbar {
+  display: none;
+}
+
+.hero-car-img {
+  object-position: center 65%;
+}
+
+@media (min-width: 640px) {
+  .hero-car-img {
+    object-position: center center;
+  }
+}
