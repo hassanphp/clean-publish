@@ -16,7 +16,7 @@ SERVICE_NAME=carveo-backend
 
 echo "==> Updating system and installing dependencies..."
 sudo apt-get update -qq
-sudo apt-get install -y -qq python3-pip python3-venv python3-dev git build-essential libgl1-mesa-glx libglib2.0-0
+sudo apt-get install -y -qq python3-pip python3-venv python3-dev git build-essential libgl1 libglib2.0-0
 
 echo "==> Cloning or pulling repo..."
 if [ ! -d "$APP_DIR" ]; then
