@@ -531,6 +531,15 @@ async def analyze_images(request: dict):
     return {"results": results}
 
 
+@app.get("/")
+def root():
+    return {
+        "service": "Carveo API",
+        "health": "/health",
+        "docs": "/docs",
+    }
+
+
 @app.get("/health")
 def health():
     return {"status": "ok"}
