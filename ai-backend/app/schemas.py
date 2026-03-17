@@ -53,6 +53,10 @@ class ProcessBatchRequest(BaseModel):
         default="11",
         description="V11=OpenAI-only (metadata + GPT Image 1.5) - default. Other versions available for compatibility.",
     )
+    preview: bool = Field(
+        default=False,
+        description="When true (V11), downscale inputs to generate a cheaper low-res preview. Full-quality runs remain unchanged.",
+    )
     user_email: str | None = Field(default=None, description="Optional user email")
     dealer_id: int | None = Field(default=None, description="Optional dealer ID - loads preferences and assets")
     project_id: int | None = Field(default=None, description="Optional project ID - links results to a project")

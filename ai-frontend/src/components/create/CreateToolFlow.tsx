@@ -120,6 +120,7 @@ export function CreateToolFlow() {
   const [targetStudioDescription, setTargetStudioDescription] = useState("");
   const [studioReferenceDataUri, setStudioReferenceDataUri] = useState<string | null>(null);
   const [pipelineVersion, setPipelineVersion] = useState<"11">("11");
+  const [previewMode, setPreviewMode] = useState(false);
   const resultsRef = useRef<ProcessedResult[]>([]);
 
   useEffect(() => {
@@ -331,6 +332,7 @@ export function CreateToolFlow() {
     const payload = {
       images: imageBase64s,
       pipeline_version: pipelineVersion,
+      preview: previewMode,
       studio_reference_image: studioB64,
       ...(currentOrder?.projectId && { project_id: currentOrder.projectId }),
       ...(brandingOptions && { branding_options: brandingOptions }),
@@ -491,6 +493,17 @@ export function CreateToolFlow() {
             t={t}
             theme={themeVal}
           />
+          <div className="mt-6 flex items-center justify-center sm:justify-end">
+            <label className="flex items-center gap-3 text-sm font-semibold text-[var(--foreground)]">
+              <input
+                type="checkbox"
+                checked={previewMode}
+                onChange={(e) => setPreviewMode(e.target.checked)}
+                className="h-4 w-4 accent-blue-600"
+              />
+              Preview mode (lower cost, lower quality)
+            </label>
+          </div>
         </div>
       </Layout>
     );

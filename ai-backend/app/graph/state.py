@@ -45,6 +45,7 @@ class GraphState(TypedDict, total=False):
     target_studio_description: str
     pipeline_version: str  # "1", "2", or "3"
     studio_reference_b64: str | None  # For V3 remove-bg composite
+    preview: bool  # When True, generate a cheaper low-res preview (does not affect full-quality runs)
     dealer_branding: dict | None  # For V6/V7: logo for 3D wall (model-generated)
     model_override: str | None  # For regenerate: "fal" | "replicate" | "vertex"
     # Accumulated via operator.add (reducer)

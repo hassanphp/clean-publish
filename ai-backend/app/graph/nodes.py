@@ -428,6 +428,7 @@ def dynamic_prompt_node(state: GraphState) -> dict:
     logs: list[str] = []
 
     target_short = target[:200] + "..." if len(target) > 200 else target
+    preview = bool(state.get("preview", False))
     dealer_branding = state.get("dealer_branding")
     dealer_logo_b64 = None
     branding_instructions = []
@@ -692,6 +693,7 @@ def dynamic_prompt_node(state: GraphState) -> dict:
             "guidance_scale": guidance,
             "base_steps": steps,
             "metadata": meta,
+            "preview": preview,
         }
         if car_url:
             pl["car_image_url"] = car_url
@@ -970,6 +972,27 @@ def _edit_image_openai_gpt(payload: VertexPayload, studio_b64: str) -> tuple[int
         studio_bytes, _ = _ensure_openai_compatible_image(studio_bytes)
     except Exception:
         pass
+
+    # Preview mode: downscale inputs before sending to the model to reduce cost.
+    # This does not change full-quality results because preview is opt-in.
+    if payload.get("preview"):
+        try:
+            from PIL import Image
+
+            def _downscale_jpeg(img_bytes: bytes, max_dim: int = 1024, quality: int = 72) -> bytes:
+                im = Image.open(io.BytesIO(img_bytes)).convert("RGB")
+                w, h = im.size
+                scale = min(1.0, max_dim / max(w, h))
+                if scale < 1.0:
+                    im = im.resize((int(w * scale), int(h * scale)), Image.Resampling.LANCZOS)
+                buf = io.BytesIO()
+                im.save(buf, format="JPEG", quality=quality, optimize=True)
+                return buf.getvalue()
+
+            car_bytes = _downscale_jpeg(car_bytes)
+            studio_bytes = _downscale_jpeg(studio_bytes)
+        except Exception:
+            pass
 
     images: list[tuple[bytes, str, str]] = [
         (car_bytes, "car.jpg", "image/jpeg"),

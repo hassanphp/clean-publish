@@ -111,6 +111,8 @@ export interface ProcessBatchParams {
   studio_reference_image?: string;
   studio_reference_data_uri?: string;
   pipeline_version?: "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "10" | "11";
+  /** If true, backend downscales inputs for a cheaper preview. */
+  preview?: boolean;
   project_id?: number;
   dealer_id?: number;
   branding_options?: {

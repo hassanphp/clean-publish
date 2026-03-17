@@ -232,6 +232,7 @@ async def process_batch(
         or request.studio_reference_image
     )
     pipeline_version = getattr(request, "pipeline_version", "11") or "11"
+    preview = bool(getattr(request, "preview", False))
     if studio_b64:
         from app.studio_analyzer import analyze_studio_image
         studio_analysis_log = "Analyzing studio reference..."
@@ -277,6 +278,7 @@ async def process_batch(
         "target_studio_description": target_description,
         "pipeline_version": pipeline_version,
         "studio_reference_b64": studio_b64,
+        "preview": preview,
         "metadata": [],
         "vertex_payloads": [],
         "results": [],
@@ -302,6 +304,7 @@ async def process_batch(
                     "target_studio_description": target_description,
                     "pipeline_version": pipeline_version,
                     "studio_reference_b64": studio_b64,
+                    "preview": preview,
                     "dealer_branding": dealer_branding,
                     "metadata": [],
                     "vertex_payloads": [],
@@ -470,6 +473,7 @@ async def regenerate_image(request: RegenerateRequest):
         "target_studio_description": request.target_studio_description,
         "pipeline_version": request.pipeline_version,
         "studio_reference_b64": studio_b64,
+        "preview": False,
         "dealer_branding": None,
         "model_override": request.model,
         "vertex_payloads": [],
