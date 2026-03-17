@@ -483,6 +483,9 @@ def dynamic_prompt_node(state: GraphState) -> dict:
                     f"Replace everything visible through the windshield and all car windows with the studio backdrop from the second reference image: {target_short}. "
                     f"Remove outdoor view, garage, vehicles, sky. Remove reflections on glossy interior. "
                     f"Keep the car interior unchanged - dashboard, seats, steering wheel, all colors and materials. "
+                    f"CRITICAL: Preserve the EXACT camera angle, framing, and crop. Do NOT zoom out or show more of the cabin/windows than the original. "
+                    f"CRITICAL: Output must stay 4:3 (do not change aspect ratio). "
+                    f"CRITICAL: Do NOT hallucinate any new interior parts (extra windows, steering wheel parts, screens, trims). "
                     f"The studio must look photographically realistic. "
                     f"{preserve_rules}"
                 )
@@ -503,7 +506,8 @@ def dynamic_prompt_node(state: GraphState) -> dict:
                 prompt = (
                     f"Replace ONLY the ground beneath the tire with the studio from the second reference image: {target_short}. "
                     f"CRITICAL: Do NOT isolate or cut out the wheel. Keep the FULL scene: fender, wheel arch, mudguard, body panel, wheel, tire, rim. "
-                    f"CRITICAL: Preserve EXACT camera angle, framing, composition. Preserve exact color and brightness. "
+                    f"CRITICAL: Preserve EXACT camera angle, framing, and crop. Do NOT zoom out, widen the view, or outpaint missing body parts. "
+                    f"CRITICAL: Preserve exact color and brightness. "
                     f"Visible elements: {comps_hint}. Preserve all original colors. Remove reflections. Minimal floor shadows. "
                     f"{preserve_rules}"
                 )
@@ -1444,8 +1448,8 @@ async def vertex_execution_node_async(
                     dominant_color="unknown",
                     suggested_edit_mode="product-image",
                 )
-            # Exterior full-car views: enforce 4:3 aspect ratio
-            if getattr(meta, "view_category", None) == "exterior":
+            # Exterior + interior: enforce 4:3 aspect ratio
+            if getattr(meta, "view_category", None) in ("exterior", "interior"):
                 processed_b64 = _crop_to_aspect_ratio_4_3(processed_b64)
             model_info = _get_model_info(p)
             results.append(
