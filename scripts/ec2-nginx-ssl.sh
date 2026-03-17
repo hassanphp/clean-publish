@@ -16,6 +16,7 @@ sudo tee /etc/nginx/sites-available/carveo-api > /dev/null << EOF
 server {
     listen 80;
     server_name $DOMAIN;
+    client_max_body_size 100M;
     location / {
         proxy_pass http://127.0.0.1:8000;
         proxy_http_version 1.1;
@@ -26,6 +27,7 @@ server {
         proxy_buffering off;
         proxy_read_timeout 300s;
         proxy_send_timeout 300s;
+        client_max_body_size 100M;
     }
 }
 EOF

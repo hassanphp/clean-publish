@@ -126,4 +126,9 @@ Backend-only (EC2 + ALB + RDS + Redis) ≈ **\$100–110/mo**; reduce with reser
    - Deploy. CORS allows any `https://*.vercel.app` origin.
 3. **Login** – Use seeded admin: **dealer@domain.com** / **Admin@321** (100 credits).
 4. **Custom domain (optional)** – In Vercel, add carveo.eu or www.carveo.eu and point DNS as instructed.
-5. **API keys on EC2** – Edit `/home/ubuntu/clean-publish/ai-backend/.env` with real `OPENAI_API_KEY`, `REPLICATE_API_TOKEN`, `FAL_KEY` for image processing, then `sudo systemctl restart carveo-backend`.
+5. **413 Payload Too Large** – Nginx on EC2 is set to `client_max_body_size 100M` so process-batch with multiple base64 images succeeds. If you still see 413 with many large images, increase it in `/etc/nginx/sites-available/carveo-api` and `sudo systemctl reload nginx`.
+
+6. **API keys on EC2** – Required to fix **"Incorrect API key provided"** / fallback metadata errors. On the server edit `/home/ubuntu/clean-publish/ai-backend/.env` and set:
+   - **OPENAI_API_KEY** – Your real key from [platform.openai.com](https://platform.openai.com/account/api-keys) (used for image metadata and V11 pipeline). The placeholder `your-openai-key` will cause 401 errors.
+   - **REPLICATE_API_TOKEN**, **FAL_KEY** – For image editing if you use those providers.
+   Then run: `sudo systemctl restart carveo-backend`.

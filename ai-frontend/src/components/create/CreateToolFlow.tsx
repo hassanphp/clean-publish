@@ -65,7 +65,7 @@ export function CreateToolFlow() {
   const { data: me } = useGetMeQuery();
   const isLoggedIn = !!me;
   const { data: projects, isLoading: loadingProjects } = useGetProjectsQuery(undefined, { skip: !isLoggedIn });
-  const [createProject] = useCreateProjectMutation();
+  const [createProject, { isLoading: isCreatingProject }] = useCreateProjectMutation();
   const [updateProject] = useUpdateProjectMutation();
   const [deleteProject] = useDeleteProjectMutation();
   const [upsertProjectImages] = useUpsertProjectImagesMutation();
@@ -251,6 +251,7 @@ export function CreateToolFlow() {
   const handleProjectNameContinue = async () => {
     if (!projectName.trim()) return;
     const title = projectName.trim();
+    setError(null);
     if (isLoggedIn) {
       try {
         const project = await createProject({ title }).unwrap();
@@ -269,8 +270,14 @@ export function CreateToolFlow() {
         setCurrentOrder(order);
         setOrders((prev) => [order, ...prev.filter((o) => o.projectId !== project.id)]);
         setView("studio");
-      } catch {
-        setError("Failed to create project. Please try again.");
+      } catch (err: unknown) {
+        const msg =
+          err && typeof err === "object" && "data" in err && err.data && typeof (err.data as { detail?: string }).detail === "string"
+            ? (err.data as { detail: string }).detail
+            : err && typeof err === "object" && "status" in err && (err as { status: number }).status === 401
+              ? "Please log in again."
+              : "Failed to create project. Please try again.";
+        setError(msg);
       }
     } else {
       const order: Order = {
@@ -447,19 +454,25 @@ export function CreateToolFlow() {
             placeholder="e.g. BMW 3 Series"
             className="w-full max-w-md px-4 py-3 rounded-xl bg-[var(--card)] border border-[var(--border)] text-[var(--foreground)] placeholder-gray-500 focus:outline-none focus:border-blue-500 mb-6"
           />
+          {error && (
+            <p className="max-w-md mb-4 text-sm text-red-500" role="alert">
+              {error}
+            </p>
+          )}
           <div className="flex gap-4">
             <button
               onClick={() => setView("dashboard")}
-              className="px-6 py-3 rounded-xl border border-[var(--border)] bg-[var(--card)] font-medium"
+              disabled={isCreatingProject}
+              className="px-6 py-3 rounded-xl border border-[var(--border)] bg-[var(--card)] font-medium disabled:opacity-50"
             >
               Back
             </button>
             <button
               onClick={handleProjectNameContinue}
-              disabled={!projectName.trim()}
+              disabled={!projectName.trim() || isCreatingProject}
               className="px-8 py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold disabled:opacity-50"
             >
-              Continue
+              {isCreatingProject ? "Creating…" : "Continue"}
             </button>
           </div>
         </div>

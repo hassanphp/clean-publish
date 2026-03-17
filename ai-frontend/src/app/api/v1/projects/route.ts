@@ -22,6 +22,7 @@ export async function POST(request: NextRequest) {
     const body = await request.text();
     const res = await fetchWithAuth("/api/v1/projects", {
       method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: body || "{}",
     });
     const data = await res.json().catch(() => ({}));

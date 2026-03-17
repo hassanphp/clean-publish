@@ -1,6 +1,9 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
+
+// Hero image (replace with /demo/hero-car.png once you add public/demo/hero-car.png)
+const HERO_IMAGE = "https://images.unsplash.com/photo-1494976388531-d1058494cdd8?w=1920&q=80";
 import {
   Camera,
   Zap,
@@ -268,9 +271,9 @@ const LandingPage: React.FC = () => {
       >
         <div className="absolute inset-0">
           <img
-            src="/demo/hero-car.png"
+            src={HERO_IMAGE}
             onError={(e) => {
-              (e.target as HTMLImageElement).src = "/demo/exterior-after.png";
+              (e.target as HTMLImageElement).src = "/vercel.svg";
             }}
             alt="Carveo AI Studio"
             className="w-full h-full object-cover hero-car-img"

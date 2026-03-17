@@ -10,8 +10,12 @@ const nextConfig: NextConfig = {
       { source: "/api/v1/jobs/:path*", destination: `${apiUrl}/api/v1/jobs/:path*` },
       { source: "/api/v1/dealers/:path*", destination: `${apiUrl}/api/v1/dealers/:path*` },
       { source: "/api/v1/webhooks/:path*", destination: `${apiUrl}/api/v1/webhooks/:path*` },
+      { source: "/api/v1/projects", destination: `${apiUrl}/api/v1/projects` },
+      { source: "/api/v1/projects/:path*", destination: `${apiUrl}/api/v1/projects/:path*` },
+      { source: "/api/v1/storage/:path*", destination: `${apiUrl}/api/v1/storage/:path*` },
+      { source: "/api/v1/billing/:path*", destination: `${apiUrl}/api/v1/billing/:path*` },
+      { source: "/api/v1/auth/:path*", destination: `${apiUrl}/api/v1/auth/:path*` },
       // /api/v1/process-batch is handled by our route (credit check + proxy)
-      // /api/auth/* and /api/webhook/* are Next.js routes (NextAuth, Stripe)
     ];
   },
 };

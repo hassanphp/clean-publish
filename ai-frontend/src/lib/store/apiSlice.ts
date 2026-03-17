@@ -56,6 +56,8 @@ export const apiSlice = createApi({
   reducerPath: "api",
   baseQuery,
   tagTypes: ["User", "Project", "ProjectList"],
+  keepUnusedDataFor: 120,
+  refetchOnMountOrArgChange: 30,
   endpoints: (builder) => ({
     getMe: builder.query<UserResponse, void>({
       query: () => "/api/v1/auth/me",
