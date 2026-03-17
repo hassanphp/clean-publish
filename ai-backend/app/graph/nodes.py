@@ -189,6 +189,17 @@ def _classify_image_url_openai(image_url: str, index: int) -> AutomotiveImageMet
     """Classify one image with OpenAI using URL directly (no fetch)."""
     from openai import OpenAI
 
+    # Cache by URL string. This keeps outputs identical for the same input.
+    try:
+        from app.cache import cache_get_json, cache_set_json, sha256_text
+
+        cache_key = f"meta_url:{sha256_text(image_url)}"
+        cached = cache_get_json(cache_key)
+        if isinstance(cached, dict):
+            return _normalize_metadata(cached)
+    except Exception:
+        cache_key = None
+
     api_key = os.getenv("OPENAI_API_KEY", "").strip()
     if not api_key:
         raise ValueError("OPENAI_API_KEY not set. Required when METADATA_PROVIDER=openai")
@@ -215,6 +226,11 @@ def _classify_image_url_openai(image_url: str, index: int) -> AutomotiveImageMet
     elif "```" in text:
         text = text.split("```")[1].split("```")[0].strip()
     data = json.loads(text)
+    if cache_key:
+        try:
+            cache_set_json(cache_key, data)
+        except Exception:
+            pass
     return _normalize_metadata(data)
 
 
@@ -222,6 +238,17 @@ def _classify_image_url_openai(image_url: str, index: int) -> AutomotiveImageMet
 def _classify_single_image_openai(image_b64: str, index: int) -> AutomotiveImageMetadata:
     """Classify one image with OpenAI GPT-4o mini Vision."""
     from openai import OpenAI
+
+    # Cache by exact base64 bytes (after stripping data URI).
+    try:
+        from app.cache import cache_get_json, cache_set_json, sha256_b64
+
+        cache_key = f"meta_b64:{sha256_b64(image_b64)}"
+        cached = cache_get_json(cache_key)
+        if isinstance(cached, dict):
+            return _normalize_metadata(cached)
+    except Exception:
+        cache_key = None
 
     api_key = os.getenv("OPENAI_API_KEY", "").strip()
     if not api_key:
@@ -259,6 +286,11 @@ def _classify_single_image_openai(image_b64: str, index: int) -> AutomotiveImage
     elif "```" in text:
         text = text.split("```")[1].split("```")[0].strip()
     data = json.loads(text)
+    if cache_key:
+        try:
+            cache_set_json(cache_key, data)
+        except Exception:
+            pass
     return _normalize_metadata(data)
 
 

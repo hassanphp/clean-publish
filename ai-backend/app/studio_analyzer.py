@@ -104,10 +104,28 @@ def analyze_studio_image(studio_b64: str, force_openai: bool = False) -> str:
     Falls back to default when quota is exceeded (429).
     force_openai: when True (e.g. V11), always use OpenAI regardless of METADATA_PROVIDER.
     """
+    # Cache by exact studio reference image bytes (base64). This does not change outputs:
+    # same input -> same prompt, saved cost.
+    try:
+        from app.cache import cache_get_json, cache_set_json, sha256_b64
+
+        cache_key = f"studio_prompt:{sha256_b64(studio_b64)}"
+        cached = cache_get_json(cache_key)
+        if isinstance(cached, str) and cached.strip():
+            return cached
+    except Exception:
+        cache_key = None
+
     provider = os.getenv("METADATA_PROVIDER", os.getenv("GEMINI_PROVIDER", "vertex")).lower()
     if provider == "openai" or force_openai:
         try:
-            return _analyze_studio_openai(studio_b64)
+            out = _analyze_studio_openai(studio_b64)
+            if cache_key and out:
+                try:
+                    cache_set_json(cache_key, out)
+                except Exception:
+                    pass
+            return out
         except Exception:
             return DEFAULT_STUDIO_PROMPT
     try:
@@ -135,7 +153,13 @@ def analyze_studio_image(studio_b64: str, force_openai: bool = False) -> str:
             text = text.split("```")[1].split("```")[0].strip()
 
         data = json.loads(text)
-        return data.get("generation_prompt", str(data))
+        out = data.get("generation_prompt", str(data))
+        if cache_key and out:
+            try:
+                cache_set_json(cache_key, out)
+            except Exception:
+                pass
+        return out
     except Exception as e:
         err_str = str(e).lower()
         if "429" in err_str or "quota" in err_str or "resource_exhausted" in err_str:
