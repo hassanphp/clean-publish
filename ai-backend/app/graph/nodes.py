@@ -498,6 +498,7 @@ def dynamic_prompt_node(state: GraphState) -> dict:
                     f"CRITICAL: Preserve wheel design, badges, logos, license plate area. "
                     f"The studio must be empty - no people, no person shadows. Remove reflections on hood and body. "
                     f"Add subtle natural floor shadows only from the car. Photorealistic result. "
+                    f"Center the car on the turntable/platform if present, without changing the original camera angle or framing. "
                     f"{preserve_rules}"
                     f"{branding_instruction}"
                 )
