@@ -171,8 +171,8 @@ def _detect_image_mime(image_bytes: bytes) -> str:
 
 def _ensure_openai_compatible_image(image_bytes: bytes) -> tuple[bytes, str]:
     """
-    Convert image to OpenAI-supported format (JPEG). Handles HEIC, AVIF, BMP, TIFF, etc.
-    OpenAI only accepts png, jpeg, gif, webp. Returns (jpeg_bytes, "image/jpeg").
+    Convert any image format to JPEG for OpenAI. Supports HEIC, AVIF, BMP, TIFF, WebP, etc.
+    User can upload all common formats - we convert automatically.
     """
     # Register HEIC (iPhone) and AVIF openers for PIL
     try:
@@ -185,30 +185,50 @@ def _ensure_openai_compatible_image(image_bytes: bytes) -> tuple[bytes, str]:
     except ImportError:
         pass
 
-    # Try PIL first (supports HEIC, AVIF with plugins)
-    try:
+    def _pil_to_jpeg(img) -> bytes:
         from PIL import Image
-        img = Image.open(io.BytesIO(image_bytes))
         if img.mode in ("RGBA", "P"):
             img = img.convert("RGB")
         elif img.mode != "RGB":
             img = img.convert("RGB")
         buf = io.BytesIO()
         img.save(buf, format="JPEG", quality=92)
-        return buf.getvalue(), "image/jpeg"
+        return buf.getvalue()
+
+    # 1. PIL (HEIC, AVIF, PNG, JPEG, GIF, WebP, BMP, TIFF with plugins)
+    try:
+        from PIL import Image
+        img = Image.open(io.BytesIO(image_bytes))
+        return _pil_to_jpeg(img), "image/jpeg"
     except Exception:
         pass
 
-    # Fallback: cv2 for formats it supports (JPEG, PNG, BMP, TIFF, WebP)
+    # 2. OpenCV (JPEG, PNG, BMP, TIFF, WebP, PPM, etc.)
     nparr = np.frombuffer(image_bytes, np.uint8)
     img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
     if img is not None:
         _, buf = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 92])
         return buf.tobytes(), "image/jpeg"
 
+    # 3. imageio (extra formats)
+    try:
+        import imageio
+        arr = imageio.imread(io.BytesIO(image_bytes))
+        if arr is not None and len(arr.shape) >= 2:
+            from PIL import Image
+            if len(arr.shape) == 2:
+                pil_img = Image.fromarray(arr).convert("RGB")
+            elif arr.shape[-1] == 4:
+                pil_img = Image.fromarray(arr).convert("RGB")
+            else:
+                pil_img = Image.fromarray(arr)
+            return _pil_to_jpeg(pil_img), "image/jpeg"
+    except Exception:
+        pass
+
     raise ValueError(
-        "Unsupported image format. Please use PNG, JPEG, GIF, or WebP. "
-        "HEIC/AVIF from phones may need conversion before upload."
+        "Could not decode image. Supported formats: JPEG, PNG, GIF, WebP, HEIC, AVIF, BMP, TIFF. "
+        "Please ensure the file is a valid image."
     )
 
 

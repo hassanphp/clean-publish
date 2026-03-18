@@ -40,7 +40,7 @@ export function ImageUploadZone({
         valid.push(f);
       }
       if (valid.length === 0 && files.length > 0 && !error) {
-        setError("No valid images. Use JPEG, PNG, or WebP under " + maxSizeMB + "MB.");
+        setError("No valid images. Use JPEG, PNG, HEIC, AVIF, WebP, GIF, BMP, or TIFF under " + maxSizeMB + "MB.");
       }
       return valid;
     },
@@ -129,7 +129,7 @@ export function ImageUploadZone({
                 theme === "light" ? "text-slate-500" : "text-zinc-500"
               }`}
             >
-              JPEG, PNG, WebP up to {maxSizeMB}MB • Max {maxFiles} files
+              JPEG, PNG, HEIC, AVIF, WebP, GIF, BMP, TIFF up to {maxSizeMB}MB • Max {maxFiles} files
             </p>
           </div>
         </div>

@@ -2,12 +2,13 @@
 
 import { useCallback, useRef } from "react";
 
-const IMAGE_ACCEPT = "image/jpeg,image/png,.jpg,.jpeg,.png";
+const IMAGE_ACCEPT =
+  "image/jpeg,image/png,image/gif,image/webp,image/avif,image/bmp,image/tiff,image/heic,.jpg,.jpeg,.png,.gif,.webp,.avif,.bmp,.tiff,.tif,.heic";
 
 function isImageFile(file: File): boolean {
   if (file.type.startsWith("image/")) return true;
   const ext = file.name.split(".").pop()?.toLowerCase();
-  return ["jpg", "jpeg", "png"].includes(ext ?? "");
+  return ["jpg", "jpeg", "png", "gif", "webp", "avif", "bmp", "tiff", "tif", "heic"].includes(ext ?? "");
 }
 
 interface StudioReferenceUploadProps {
