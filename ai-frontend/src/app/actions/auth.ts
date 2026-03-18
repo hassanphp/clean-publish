@@ -94,8 +94,8 @@ export async function registerAction(
 
 export async function logoutAction(): Promise<void> {
   const cookieStore = await cookies();
-  const opts: Parameters<typeof cookieStore.delete>[1] = { path: "/" };
+  // Next.js 16 delete() accepts only name; for domain-scoped cookies use set with maxAge: 0
   const domain = process.env.COOKIE_DOMAIN;
-  if (domain) opts.domain = domain;
-  cookieStore.delete("access_token", opts);
+  const opts = { path: "/" as const, maxAge: 0, ...(domain && { domain }) };
+  cookieStore.set("access_token", "", opts);
 }
