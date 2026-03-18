@@ -10,8 +10,21 @@ from app.database import get_db
 from app.models import Project, JobImage
 from app.routers.auth import get_current_user
 from app.models import User
+from app.utils.storage import generate_signed_read_url
 
 router = APIRouter(prefix="/api/v1/projects", tags=["projects"])
+
+
+def _maybe_signed(url: str | None) -> str | None:
+    """If url is from object storage (s3://, gs://, r2://), return a signed http(s) read URL.
+    If it is already a data/http(s) URL, return as-is.
+    """
+    if not url:
+        return None
+    if url.startswith("data:") or url.startswith("http://") or url.startswith("https://"):
+        return url
+    signed = generate_signed_read_url(url)
+    return signed or url
 
 
 class ProjectCreate(BaseModel):
@@ -115,13 +128,14 @@ def create_project(
 
 
 def _project_thumbnail(db: Session, project_id: int) -> str | None:
-    return (
+    thumb = (
         db.query(JobImage.processed_url)
         .filter(JobImage.project_id == project_id, JobImage.processed_url.isnot(None))
         .order_by(JobImage.image_index)
         .limit(1)
         .scalar()
     )
+    return _maybe_signed(thumb)
 
 
 @router.get("/{project_id}", response_model=ProjectResponse)
@@ -259,8 +273,8 @@ def get_project_images(
             id=ji.id,
             project_id=ji.project_id,
             image_index=ji.image_index,
-            original_url=ji.original_url,
-            processed_url=ji.processed_url,
+            original_url=_maybe_signed(ji.original_url),
+            processed_url=_maybe_signed(ji.processed_url),
             status=ji.status,
             error_message=ji.error_message,
             created_at=ji.created_at.isoformat() if ji.created_at else "",

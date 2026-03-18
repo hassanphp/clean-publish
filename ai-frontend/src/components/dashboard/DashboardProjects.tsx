@@ -11,6 +11,8 @@ import {
   Trash2,
   Pen,
   Plus,
+  AlertTriangle,
+  X,
 } from "lucide-react";
 import { TASKS } from "@/lib/createConstants";
 import type { TaskType, Order } from "@/types/create";
@@ -41,7 +43,12 @@ export function DashboardProjects({
   t,
   theme,
 }: DashboardProjectsProps) {
-  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [deleteModal, setDeleteModal] = useState<
+    | { mode: "single"; orderId: string; title: string }
+    | { mode: "all"; count: number }
+    | null
+  >(null);
+  const [deleting, setDeleting] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
   const [savingId, setSavingId] = useState<string | null>(null);
@@ -74,14 +81,21 @@ export function DashboardProjects({
 
   const cancelEdit = () => setEditingId(null);
 
-  const handleDelete = (e: React.MouseEvent, orderId: string) => {
-    e.stopPropagation();
-    if (confirmDeleteId === orderId) {
-      onDeleteOrder?.(orderId);
-      setConfirmDeleteId(null);
-    } else {
-      setConfirmDeleteId(orderId);
-      setTimeout(() => setConfirmDeleteId((prev) => (prev === orderId ? null : prev)), 3000);
+  const confirmDelete = async () => {
+    if (!onDeleteOrder || !deleteModal) return;
+    setDeleting(true);
+    try {
+      if (deleteModal.mode === "single") {
+        await Promise.resolve(onDeleteOrder(deleteModal.orderId));
+      } else {
+        // Bulk delete: delete everything currently loaded for this user.
+        for (const o of orders) {
+          await Promise.resolve(onDeleteOrder(o.id));
+        }
+      }
+      setDeleteModal(null);
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -102,16 +116,31 @@ export function DashboardProjects({
             Your vehicle projects and processed images
           </p>
         </div>
-        {orders.length > 8 && (
-          <button
-            onClick={() => setShowAll((prev) => !prev)}
-            className={`px-4 py-2 rounded-xl text-sm font-medium transition-all ${
-              theme === "light" ? "bg-gray-100 hover:bg-gray-200 text-gray-600" : "bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white"
-            }`}
-          >
-            {showAll ? t.showLess : `${t.showAll} (${orders.length})`}
-          </button>
-        )}
+        <div className="flex items-center gap-3">
+          {orders.length > 8 && (
+            <button
+              onClick={() => setShowAll((prev) => !prev)}
+              className={`px-4 py-2 rounded-xl text-sm font-medium transition-all ${
+                theme === "light" ? "bg-gray-100 hover:bg-gray-200 text-gray-600" : "bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white"
+              }`}
+            >
+              {showAll ? t.showLess : `${t.showAll} (${orders.length})`}
+            </button>
+          )}
+          {onDeleteOrder && orders.length > 0 && (
+            <button
+              onClick={() => setDeleteModal({ mode: "all", count: orders.length })}
+              className={`px-4 py-2 rounded-xl text-sm font-bold transition-all ${
+                theme === "light"
+                  ? "bg-red-500/10 hover:bg-red-500/15 text-red-600 border border-red-500/20"
+                  : "bg-red-500/15 hover:bg-red-500/25 text-red-300 border border-red-500/25"
+              }`}
+              title="Delete all projects"
+            >
+              Delete all
+            </button>
+          )}
+        </div>
       </div>
 
       {loadingProjects ? (
@@ -239,17 +268,20 @@ export function DashboardProjects({
                     <div className="flex items-center gap-1">
                       {onDeleteOrder && (
                         <button
-                          onClick={(e) => handleDelete(e, order.id)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setDeleteModal({
+                              mode: "single",
+                              orderId: order.id,
+                              title: order.title || order.vin || "Untitled",
+                            });
+                          }}
                           className={`w-7 h-7 rounded-full flex items-center justify-center transition-all ${
-                            confirmDeleteId === order.id
-                              ? "bg-red-500 text-white scale-110"
-                              : `opacity-0 group-hover:opacity-100 ${
-                                  theme === "light"
-                                    ? "bg-gray-100 hover:bg-red-50 text-gray-400 hover:text-red-500"
-                                    : "bg-white/5 hover:bg-red-500/20 text-gray-500 hover:text-red-400"
-                                }`
+                            "opacity-0 group-hover:opacity-100 " + (theme === "light"
+                              ? "bg-gray-100 hover:bg-red-50 text-gray-400 hover:text-red-500"
+                              : "bg-white/5 hover:bg-red-500/20 text-gray-500 hover:text-red-400")
                           }`}
-                          title={confirmDeleteId === order.id ? t.confirmDelete : t.deleteProject}
+                          title={t.deleteProject}
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
@@ -281,6 +313,78 @@ export function DashboardProjects({
               <Plus className="w-4 h-4" />
               {t.createNewProject}
             </button>
+          </div>
+        </div>
+      )}
+
+      {deleteModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+          role="dialog"
+          aria-modal="true"
+          onClick={() => (!deleting ? setDeleteModal(null) : null)}
+        >
+          <div
+            className={`w-full max-w-lg rounded-2xl border ${
+              theme === "light" ? "bg-white border-gray-200" : "bg-[var(--card)] border-[var(--border)]"
+            } shadow-xl`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-6">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <AlertTriangle className={theme === "light" ? "text-red-600" : "text-red-300"} />
+                    <h2 className="text-lg font-black tracking-tight">
+                      {deleteModal.mode === "single"
+                        ? "Delete project"
+                        : `Delete all projects (${deleteModal.count})`}
+                    </h2>
+                  </div>
+                  <p className="mt-2 text-sm text-gray-500">
+                    {deleteModal.mode === "single"
+                      ? `Are you sure you want to delete “${deleteModal.title}”? This cannot be undone.`
+                      : "This will permanently delete all your projects and their processed images. This cannot be undone."}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  aria-label="Close"
+                  className="p-2 rounded-lg hover:bg-black/5 transition-colors"
+                  onClick={() => setDeleteModal(null)}
+                  disabled={deleting}
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="mt-6 flex gap-3 justify-end">
+                <button
+                  type="button"
+                  onClick={() => setDeleteModal(null)}
+                  disabled={deleting}
+                  className={`px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors ${
+                    theme === "light"
+                      ? "bg-gray-100 hover:bg-gray-200 text-gray-700"
+                      : "bg-white/5 hover:bg-white/10 text-gray-300"
+                  }`}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => confirmDelete()}
+                  disabled={deleting}
+                  className={`px-4 py-2.5 rounded-xl text-sm font-black transition-colors ${
+                    theme === "light"
+                      ? "bg-red-500 hover:bg-red-600 text-white"
+                      : "bg-red-500/90 hover:bg-red-500 text-white"
+                  }`}
+                >
+                  {deleting ? "Deleting..." : "Delete"}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
