@@ -48,20 +48,24 @@ def create_checkout(
     if body.plan_id not in CREDITS_MAP:
         raise HTTPException(status_code=400, detail=f"Unknown plan: {body.plan_id}")
     credits = CREDITS_MAP[body.plan_id]
-    session = stripe.checkout.Session.create(
-        mode="payment",
-        line_items=[{
-            "price_data": {
-                "currency": "eur",
-                "product_data": {"name": f"{body.plan_id.title()} - {credits} credits"},
-                "unit_amount": {"starter": 9900, "growth": 29900, "pro": 69900}.get(body.plan_id, 9900),
-            },
-            "quantity": 1,
-        }],
-        metadata={"user_id": str(user.id), "user_email": user.email, "plan_id": body.plan_id},
-        success_url=body.success_url,
-        cancel_url=body.cancel_url,
-    )
+    try:
+        session = stripe.checkout.Session.create(
+            mode="payment",
+            line_items=[{
+                "price_data": {
+                    "currency": "eur",
+                    "product_data": {"name": f"{body.plan_id.title()} - {credits} credits"},
+                    "unit_amount": {"starter": 9900, "growth": 29900, "pro": 69900}.get(body.plan_id, 9900),
+                },
+                "quantity": 1,
+            }],
+            metadata={"user_id": str(user.id), "user_email": user.email, "plan_id": body.plan_id},
+            success_url=body.success_url,
+            cancel_url=body.cancel_url,
+        )
+    except stripe.error.StripeError as e:
+        msg = getattr(e, "user_message", None) or str(e)
+        raise HTTPException(status_code=400, detail=msg)
     return {"url": session.url, "session_id": session.id}
 
 

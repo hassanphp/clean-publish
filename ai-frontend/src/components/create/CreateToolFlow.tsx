@@ -201,10 +201,7 @@ export function CreateToolFlow() {
   };
 
   const handleTaskSelect = (task: TaskType) => {
-    if (totalCredits <= 0) {
-      setError("Insufficient credits. Please purchase more to continue.");
-      return;
-    }
+    setError(null);
     setActiveTask(task);
     setCurrentOrder(null);
     setProjectName("");
@@ -342,6 +339,10 @@ export function CreateToolFlow() {
 
   const handleUploadComplete = async (uploaded: { angle: CameraAngle; data: string }[]) => {
     const imageBase64s = uploaded.map((u) => u.data);
+    if (isLoggedIn && totalCredits < imageBase64s.length) {
+      setError(`Insufficient credits. Need ${imageBase64s.length}, you have ${totalCredits}. Purchase more at Pricing.`);
+      return;
+    }
     setImages(imageBase64s);
     setView("processing");
     setLogs([]);

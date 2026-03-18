@@ -11,7 +11,10 @@ export async function POST(request: NextRequest) {
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
-      const detail = typeof data?.detail === "string" ? data.detail : "Checkout failed";
+      let detail = "Checkout failed";
+      if (typeof data?.detail === "string") detail = data.detail;
+      else if (Array.isArray(data?.detail) && data.detail[0]?.msg) detail = data.detail[0].msg;
+      else if (data?.detail && typeof data.detail === "object") detail = JSON.stringify(data.detail);
       return NextResponse.json({ detail }, { status: res.status });
     }
     return NextResponse.json(data);

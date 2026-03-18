@@ -29,8 +29,11 @@ export default function PricingPage() {
       }).unwrap();
       if (url) window.location.href = url;
     } catch (e: unknown) {
-      const err = e as { data?: { detail?: string }; status?: number };
-      const msg = err?.data?.detail ?? (e instanceof Error ? e.message : "Checkout failed");
+      const err = e as { data?: { detail?: string }; status?: number; error?: string };
+      const msg =
+        err?.data?.detail ??
+        err?.error ??
+        (e instanceof Error ? e.message : "Checkout failed");
       setError(msg);
     }
   };

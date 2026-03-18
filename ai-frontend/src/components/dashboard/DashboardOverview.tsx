@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { motion } from "framer-motion";
 import {
   Sparkles,
@@ -64,6 +65,33 @@ export function DashboardOverview({
       animate="visible"
       className="space-y-8"
     >
+      {/* Low credits banner - when logged in and 0 credits */}
+      {isLoggedIn && totalCredits <= 0 && (
+        <motion.div
+          variants={itemVariants}
+          className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4"
+        >
+          <div className="flex items-start gap-4">
+            <div className="p-2.5 rounded-xl bg-amber-500/20 shrink-0">
+              <CreditCard className="w-6 h-6 text-amber-500" />
+            </div>
+            <div>
+              <h3 className="font-bold text-[var(--foreground)]">Get credits to process images</h3>
+              <p className="mt-1 text-sm text-gray-500">
+                Purchase credits to process vehicle images. Superadmins can add credits from Account.
+              </p>
+            </div>
+          </div>
+          <Link
+            href="/pricing"
+            className="shrink-0 rounded-xl bg-amber-500 px-6 py-2.5 font-bold text-zinc-950 hover:bg-amber-400 transition-colors flex items-center gap-2"
+          >
+            Buy credits
+            <ChevronRight className="w-4 h-4" />
+          </Link>
+        </motion.div>
+      )}
+
       {/* Optional dealer setup banner - shown when logged in but no dealer profile */}
       {hasNoDealer && onSetupDealer && (
         <motion.div
