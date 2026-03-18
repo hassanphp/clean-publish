@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import Layout from "@/components/Layout";
 import { useDispatch } from "react-redux";
 import {
   useGetDealersQuery,
@@ -10,6 +11,7 @@ import {
   useUpdateDealerMutation,
   useUpdatePreferencesMutation,
   useUploadAssetMutation,
+  useDeleteAssetMutation,
 } from "@/store/api/dealerApi";
 import { setSelectedDealer } from "@/store/slices/dealerSlice";
 
@@ -35,6 +37,7 @@ export default function DealerSettingsPage() {
   const [updateDealer] = useUpdateDealerMutation();
   const [updatePreferences] = useUpdatePreferencesMutation();
   const [uploadAsset] = useUploadAssetMutation();
+  const [deleteAsset] = useDeleteAssetMutation();
 
   useEffect(() => {
     if (dealer && dealerId) {
@@ -158,21 +161,32 @@ export default function DealerSettingsPage() {
   const hasLicensePlateAsset = dealer?.assets?.some((a) => a.asset_type === "license_plate");
   const hasStudioAsset = dealer?.assets?.some((a) => a.asset_type === "studio");
 
+  const handleDeleteAsset = async (assetId: number) => {
+    if (!dealerId) return;
+    try {
+      await deleteAsset({ id: dealerId, assetId }).unwrap();
+      refetchDealer();
+    } catch {
+      setSaveStatus("error");
+    }
+  };
+
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100">
+    <Layout>
+    <div className="min-h-screen">
       <div className="mx-auto max-w-2xl px-4 py-12 sm:px-6 lg:px-8">
         <header className="mb-12 flex items-center justify-between">
           <div>
             <Link
-              href="/"
-              className="text-sm text-amber-400 hover:text-amber-300 transition-colors"
+              href="/create?view=dashboard"
+              className="text-sm text-blue-500 hover:text-blue-400 dark:text-amber-400 dark:hover:text-amber-300 transition-colors"
             >
-              ← Back
+              ← Back to Dashboard
             </Link>
-            <h1 className="mt-2 text-3xl font-black tracking-tight text-zinc-50">
+            <h1 className="mt-2 text-3xl font-black tracking-tight text-[var(--foreground)]">
               Dealer Settings
             </h1>
-            <p className="mt-1 text-zinc-500">
+            <p className="mt-1 text-gray-500">
               Configure branding and studio for your dealership
             </p>
           </div>
@@ -234,7 +248,33 @@ export default function DealerSettingsPage() {
           {dealerId && (
             <>
               <section className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-6">
-                <h2 className="mb-4 text-lg font-semibold text-zinc-100">Branding options</h2>
+                <h2 className="mb-2 text-lg font-semibold text-zinc-100">Branding</h2>
+                <p className="mb-4 text-sm text-zinc-500">
+                  Logo and preferences are saved in the database. Used automatically when processing images.
+                </p>
+
+                {dealer?.assets && dealer.assets.length > 0 && (
+                  <div className="mb-6 rounded-lg border border-zinc-800 p-4">
+                    <h3 className="text-sm font-medium text-zinc-400 mb-3">Uploaded assets</h3>
+                    <div className="flex flex-wrap gap-3">
+                      {dealer.assets.map((a) => (
+                        <div
+                          key={a.id}
+                          className="flex items-center gap-2 rounded-lg bg-zinc-800/50 px-3 py-2 text-sm"
+                        >
+                          <span className="text-zinc-300 capitalize">{a.asset_type.replace("_", " ")}</span>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteAsset(a.id)}
+                            className="text-red-400 hover:text-red-300 text-xs font-medium"
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 <div className="space-y-6">
                   <div className="flex items-start justify-between gap-4 rounded-lg border border-zinc-800 p-4">
@@ -384,5 +424,6 @@ export default function DealerSettingsPage() {
         </div>
       </div>
     </div>
+    </Layout>
   );
 }

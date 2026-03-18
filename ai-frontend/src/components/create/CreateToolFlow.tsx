@@ -3,7 +3,15 @@
 import { useState, useRef, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
 import Layout from "@/components/Layout";
-import { CreateDashboard } from "./CreateDashboard";
+import {
+  DashboardShell,
+  type DashboardSection,
+} from "@/components/dashboard/DashboardShell";
+import { DashboardOverview } from "@/components/dashboard/DashboardOverview";
+import { DashboardProjects } from "@/components/dashboard/DashboardProjects";
+import { DashboardDealerProfile } from "@/components/dashboard/DashboardDealerProfile";
+import { DashboardDealerSettings } from "@/components/dashboard/DashboardDealerSettings";
+import { DashboardAccount } from "@/components/dashboard/DashboardAccount";
 import { CreateStudioPicker } from "./CreateStudioPicker";
 import { CreateUploadChoice } from "./CreateUploadChoice";
 import { ProcessingView } from "./ProcessingView";
@@ -24,6 +32,7 @@ import {
   useDeleteProjectMutation,
   useUpsertProjectImagesMutation,
 } from "@/lib/store/apiSlice";
+import { useGetDealersQuery } from "@/store/api/dealerApi";
 import { useSelector } from "react-redux";
 import type {
   TaskType,
@@ -72,8 +81,12 @@ export function CreateToolFlow() {
   const [upsertProjectImages] = useUpsertProjectImagesMutation();
 
   const [view, setView] = useState<ViewState>("dashboard");
+  const [dashboardSection, setDashboardSection] = useState<DashboardSection>("overview");
   const [orders, setOrders] = useState<Order[]>([]);
   const [currentOrder, setCurrentOrder] = useState<Order | null>(null);
+
+  const { data: dealers = [] } = useGetDealersQuery(undefined, { skip: !isLoggedIn });
+  const selectedDealerId = useSelector((s: { dealer?: { selectedDealerId: number | null } }) => s.dealer?.selectedDealerId ?? null);
 
   const needsImages = currentOrder?.projectId && !(currentOrder?.jobs?.length ?? 0);
   const { data: projectImages } = useGetProjectImagesQuery(currentOrder?.projectId ?? 0, {
@@ -427,22 +440,70 @@ export function CreateToolFlow() {
   const themeVal = theme === "dark" ? "dark" : "light";
 
   if (view === "dashboard") {
+    const renderDashboardContent = () => {
+      switch (dashboardSection) {
+        case "overview":
+          return (
+            <DashboardOverview
+              onTaskSelect={handleTaskSelect}
+              orders={orders}
+              totalCredits={totalCredits}
+              selectedStudio={selectedStudio}
+              branding={branding}
+              onLogoUpload={handleLogoUpload}
+              onToggleBranding={handleToggleBranding}
+              t={t}
+              theme={themeVal}
+              isLoggedIn={isLoggedIn}
+            />
+          );
+        case "projects":
+          return (
+            <DashboardProjects
+              orders={orders}
+              loadingProjects={isLoggedIn && loadingProjects}
+              onOrderSelect={handleOrderSelect}
+              onDeleteOrder={handleDeleteOrder}
+              onRenameOrder={handleRenameOrder}
+              onTaskSelect={handleTaskSelect}
+              t={t}
+              theme={themeVal}
+            />
+          );
+        case "dealer-profile":
+          return (
+            <DashboardDealerProfile
+              dealers={dealers}
+              selectedDealerId={selectedDealerId}
+              theme={themeVal}
+              onNavigateToSettings={() => setDashboardSection("dealer-settings")}
+            />
+          );
+        case "dealer-settings":
+          return (
+            <DashboardDealerSettings
+              theme={themeVal}
+              hasDealers={dealers.length > 0}
+            />
+          );
+        case "account":
+          return <DashboardAccount user={me} theme={themeVal} />;
+        default:
+          return null;
+      }
+    };
+
     return (
       <Layout>
-        <CreateDashboard
-          onTaskSelect={handleTaskSelect}
-          orders={orders}
-          loadingProjects={isLoggedIn && loadingProjects}
-          onOrderSelect={handleOrderSelect}
-          onDeleteOrder={handleDeleteOrder}
-          onRenameOrder={handleRenameOrder}
-          selectedStudio={selectedStudio}
-          branding={branding}
-          onLogoUpload={handleLogoUpload}
-          onToggleBranding={handleToggleBranding}
-          t={t}
+        <DashboardShell
+          section={dashboardSection}
+          onSectionChange={setDashboardSection}
           theme={themeVal}
-        />
+          isLoggedIn={isLoggedIn}
+          hasDealerAccess={true}
+        >
+          {renderDashboardContent()}
+        </DashboardShell>
       </Layout>
     );
   }

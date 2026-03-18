@@ -15,6 +15,7 @@ import {
   CreditCard,
   LayoutDashboard,
   Settings,
+  Building2,
 } from "lucide-react";
 import { useGetMeQuery } from "@/lib/store/apiSlice";
 import { useCredits } from "@/context/CreditsContext";
@@ -245,6 +246,14 @@ const Navbar: React.FC = () => {
                             <Settings className="w-4 h-4" />
                             {t("settings")}
                           </button>
+                          <Link
+                            href="/dealer/settings"
+                            onClick={() => setIsUserMenuOpen(false)}
+                            className="flex items-center gap-2 w-full text-left px-4 py-2.5 text-base hover:bg-gray-500/10 transition-colors"
+                          >
+                            <Building2 className="w-4 h-4" />
+                            Dealer Settings
+                          </Link>
                           <div className="border-t border-[var(--border)] my-1" />
                           <button
                             onClick={handleSignOut}
