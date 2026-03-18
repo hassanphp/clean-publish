@@ -116,7 +116,7 @@ export const apiSlice = createApi({
       invalidatesTags: (_, __, { projectId }) => [{ type: "Project", id: projectId }, "ProjectList"],
     }),
     getUploadUrl: builder.query<
-      { upload_url: string; filename: string },
+      { upload_url: string; filename: string; object_url?: string },
       { filename: string; content_type?: string }
     >({
       query: ({ filename, content_type = "image/jpeg" }) => ({

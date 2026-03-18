@@ -1,6 +1,7 @@
 """FastAPI application with SSE endpoint for batch image processing."""
 
 import asyncio
+import base64
 import json
 import os
 import uuid
@@ -21,6 +22,7 @@ from app.graph.graph import create_graph
 from app.models import AsyncJob, AsyncJobImage, AsyncJobImageStatus, AsyncJobStatus, User
 from app.redis_client import subscribe_job_updates
 from app.routers import webhooks, dealers, auth, projects, storage, billing
+from app.routers import admin as admin_router
 from app.routers.auth import get_current_user
 from app.schemas import ProcessBatchRequest, RegenerateRequest, AutomotiveImageMetadata
 
@@ -79,11 +81,18 @@ app.include_router(auth.router)
 app.include_router(projects.router)
 app.include_router(storage.router)
 app.include_router(billing.router)
+app.include_router(admin_router.router)
 
 
-def _is_gcs_url(s: str) -> bool:
-    """Check if string is a GCS URL (not base64)."""
-    return s.startswith("https://storage.googleapis.com/") or s.startswith("gs://")
+def _is_cloud_storage_url(s: str) -> bool:
+    """Check if string is a cloud storage URL (not base64)."""
+    return (
+        s.startswith("https://storage.googleapis.com/")
+        or s.startswith("gs://")
+        or s.startswith("s3://")
+        or s.startswith("r2://")
+        or (s.startswith("https://") and ("s3." in s or "s3-" in s or "r2.dev" in s or "amazonaws.com" in s))
+    )
 
 
 async def _fetch_gcs_to_b64(url: str) -> str:
@@ -127,7 +136,7 @@ def _parse_images(images: list[str]) -> list[dict]:
 
     items = []
     for i, img in enumerate(images):
-        if _is_gcs_url(img):
+        if _is_cloud_storage_url(img):
             # Private bucket: use signed read URL. Public: use as-is.
             signed = generate_signed_read_url(img)
             url = signed if signed else img
@@ -452,6 +461,18 @@ async def regenerate_image(request: RegenerateRequest):
     orig_b64 = request.original_b64
     if "," in orig_b64:
         orig_b64 = orig_b64.split(",", 1)[1]
+    # Support S3/cloud URLs: fetch and convert to base64
+    if orig_b64.startswith("http://") or orig_b64.startswith("https://"):
+        import urllib.request
+        with urllib.request.urlopen(orig_b64, timeout=30) as r:
+            orig_b64 = base64.b64encode(r.read()).decode("ascii")
+    elif _is_cloud_storage_url(orig_b64):
+        from app.utils.storage import generate_signed_read_url
+        signed = generate_signed_read_url(orig_b64)
+        if signed:
+            import urllib.request
+            with urllib.request.urlopen(signed, timeout=30) as r:
+                orig_b64 = base64.b64encode(r.read()).decode("ascii")
     meta_dict = request.metadata
     meta = AutomotiveImageMetadata(
         view_category=meta_dict.get("view_category", "exterior"),

@@ -1,8 +1,10 @@
 "use client";
 
+import { useState } from "react";
 import type { CameraAngle } from "@/types/create";
-import { Upload, Camera } from "lucide-react";
+import { Camera, Loader2 } from "lucide-react";
 import { useLazyGetUploadUrlQuery, useGetMeQuery } from "@/lib/store/apiSlice";
+import { ImageUploadZone } from "@/components/ui/ImageUploadZone";
 
 interface CreateUploadChoiceProps {
   onUploadComplete: (images: { angle: CameraAngle; data: string }[]) => void;
@@ -11,10 +13,11 @@ interface CreateUploadChoiceProps {
   theme: "light" | "dark";
 }
 
-/** Strip query params to get clean GCS object URL. */
-function cleanGcsUrl(signedUrl: string): string {
+/** Use object_url from API when available; else strip query params for GCS. */
+function getObjectUrl(data: { object_url?: string; upload_url?: string; filename?: string }): string {
+  if (data?.object_url) return data.object_url;
   try {
-    const u = new URL(signedUrl);
+    const u = new URL(data?.upload_url || "");
     if (u.hostname.includes("storage.googleapis.com")) {
       u.search = "";
       return u.toString();
@@ -22,7 +25,7 @@ function cleanGcsUrl(signedUrl: string): string {
   } catch {
     /* ignore */
   }
-  return signedUrl;
+  return data?.upload_url || "";
 }
 
 export function CreateUploadChoice({
@@ -33,12 +36,11 @@ export function CreateUploadChoice({
 }: CreateUploadChoiceProps) {
   const { data: user } = useGetMeQuery(undefined, { skip: typeof window === "undefined" });
   const [getUploadUrl] = useLazyGetUploadUrlQuery();
+  const [uploading, setUploading] = useState(false);
 
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
-
-    const fileList = Array.from(files) as File[];
+  const processFiles = async (fileList: File[]) => {
+    if (!fileList.length) return;
+    setUploading(true);
     const results: { angle: CameraAngle; data: string }[] = [];
 
     if (user) {
@@ -58,7 +60,7 @@ export function CreateUploadChoice({
               headers: { "Content-Type": file.type || "image/jpeg" },
             });
             if (putRes.ok) {
-              results.push({ angle: "AUTO", data: cleanGcsUrl(data.upload_url) });
+              results.push({ angle: "AUTO", data: getObjectUrl(data) });
             } else {
               throw new Error("Upload failed");
             }
@@ -67,11 +69,13 @@ export function CreateUploadChoice({
           }
         }
         if (results.length === fileList.length) {
+          setUploading(false);
           onUploadComplete(results);
           return;
         }
       } catch {
-        /* fall through to base64 */
+        /* fall through to base64 - clear any partial S3 results */
+        results.length = 0;
       }
     }
 
@@ -84,6 +88,7 @@ export function CreateUploadChoice({
       });
       results.push({ angle: "AUTO", data: base64 });
     }
+    setUploading(false);
     onUploadComplete(results);
   };
 
@@ -99,34 +104,27 @@ export function CreateUploadChoice({
       </header>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-12 md:gap-24 mb-20">
-        <label
-          className={`group flex flex-col items-center p-12 rounded-[48px] border-2 transition-all hover:translate-y-[-10px] cursor-pointer bg-[var(--card)] border-[var(--border)] shadow-lg hover:border-blue-500 hover:shadow-2xl shadow-blue-900/10`}
+        <div
+          className={`rounded-[48px] border-2 bg-[var(--card)] border-[var(--border)] shadow-lg overflow-hidden transition-all ${
+            uploading ? "opacity-60 pointer-events-none" : "hover:border-blue-500 hover:shadow-2xl"
+          }`}
         >
-          <input
-            type="file"
-            multiple
-            className="hidden"
+          <ImageUploadZone
+            onFilesSelected={processFiles}
             accept="image/*"
-            onChange={handleFileChange}
+            maxFiles={20}
+            maxSizeMB={10}
+            disabled={uploading}
+            theme={theme}
+            className="p-8"
           />
-          <div
-            className={`w-28 h-28 rounded-[2rem] flex items-center justify-center mb-10 transition-all group-hover:scale-110 group-hover:-rotate-3 ${theme === "light" ? "bg-blue-50" : "bg-blue-600/10"}`}
-          >
-            <Upload
-              className={`w-14 h-14 ${theme === "light" ? "text-blue-600" : "text-blue-500"}`}
-            />
-          </div>
-          <h3
-            className={`text-3xl font-black mb-4 ${theme === "light" ? "text-slate-900" : "text-white"}`}
-          >
-            {t.uploadPhotos}
-          </h3>
-          <p
-            className={`text-center leading-relaxed font-medium max-w-[280px] ${theme === "light" ? "text-slate-500" : "text-gray-400"}`}
-          >
-            {t.uploadPhotosDesc}
-          </p>
-        </label>
+          {uploading && (
+            <div className="flex items-center justify-center gap-2 pb-6 text-sm text-gray-500">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              Uploading...
+            </div>
+          )}
+        </div>
 
         <div
           className={`flex flex-col items-center p-12 rounded-[48px] border-2 bg-[var(--card)] border-[var(--border)] opacity-60 cursor-not-allowed`}

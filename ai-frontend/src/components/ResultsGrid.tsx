@@ -88,15 +88,20 @@ function ResultCard({
   const viewCategory = meta.view_category ?? "exterior";
   const viewLabel =
     viewCategory.charAt(0).toUpperCase() + viewCategory.slice(1);
-  const origSrc =
-    displayResult.original_b64?.startsWith("data:")
-      ? displayResult.original_b64
-      : `data:image/jpeg;base64,${displayResult.original_b64 || ""}`;
+  const origSrc = (() => {
+    const o = displayResult.original_b64 || "";
+    if (o.startsWith("data:")) return o;
+    if (o.startsWith("http://") || o.startsWith("https://")) return o;
+    return `data:image/jpeg;base64,${o}`;
+  })();
   const hasProcessed = !!displayResult.processed_b64 && displayResult.processed_b64.length > 0;
   const procSrc = hasProcessed
-    ? (displayResult.processed_b64!.startsWith("data:")
-        ? displayResult.processed_b64!
-        : `data:image/jpeg;base64,${displayResult.processed_b64}`)
+    ? (() => {
+        const p = displayResult.processed_b64!;
+        if (p.startsWith("data:")) return p;
+        if (p.startsWith("http://") || p.startsWith("https://")) return p;
+        return `data:image/jpeg;base64,${p}`;
+      })()
     : null;
 
   const canRegenerate =

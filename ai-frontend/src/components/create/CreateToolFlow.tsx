@@ -24,6 +24,7 @@ import {
   useDeleteProjectMutation,
   useUpsertProjectImagesMutation,
 } from "@/lib/store/apiSlice";
+import { useSelector } from "react-redux";
 import type {
   TaskType,
   Order,
@@ -122,6 +123,8 @@ export function CreateToolFlow() {
   const [pipelineVersion, setPipelineVersion] = useState<"11">("11");
   const [previewMode, setPreviewMode] = useState(false);
   const resultsRef = useRef<ProcessedResult[]>([]);
+  const dealerId = useSelector((s: { dealer?: { selectedDealerId: number | null } }) => s.dealer?.selectedDealerId ?? null);
+  const useDealerSettings = useSelector((s: { dealer?: { useDealerSettings: boolean } }) => s.dealer?.useDealerSettings ?? false);
 
   useEffect(() => {
     if (searchParams.get("view") === "dashboard") {
@@ -335,6 +338,8 @@ export function CreateToolFlow() {
       preview: previewMode,
       studio_reference_image: studioB64,
       ...(currentOrder?.projectId && { project_id: currentOrder.projectId }),
+      ...(dealerId && { dealer_id: dealerId }),
+      // When dealer selected + useDealerSettings: backend loads branding from DB. Else use session branding_options.
       ...(brandingOptions && { branding_options: brandingOptions }),
     };
 

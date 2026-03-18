@@ -96,6 +96,31 @@ def _crop_to_aspect_ratio_4_3(b64_str: str) -> str:
         return b64_str
 
 
+def _resize_output(b64_str: str, max_dim: int | None = None, quality: int | None = None) -> str:
+    """Resize output to cap max dimension and re-encode with target quality. Reduces payload size."""
+    max_dim = max_dim or int(os.getenv("OUTPUT_MAX_DIM", "1024"))
+    quality = quality or int(os.getenv("OUTPUT_JPEG_QUALITY", "85"))
+    try:
+        img_bytes = base64.b64decode(b64_str.split(",", 1)[-1] if "," in b64_str else b64_str)
+        nparr = np.frombuffer(img_bytes, np.uint8)
+        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        if img is None:
+            return b64_str
+        h, w = img.shape[:2]
+        if max(h, w) <= max_dim:
+            # Only re-encode with target quality to reduce size
+            _, buf = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, quality])
+            return base64.b64encode(buf.tobytes()).decode()
+        scale = max_dim / max(h, w)
+        new_w = max(256, int(w * scale))
+        new_h = max(256, int(h * scale))
+        resized = cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_AREA)
+        _, buf = cv2.imencode(".jpg", resized, [cv2.IMWRITE_JPEG_QUALITY, quality])
+        return base64.b64encode(buf.tobytes()).decode()
+    except Exception:
+        return b64_str
+
+
 # --- Gemini Classifier Node ---
 
 ANALYSIS_PROMPT = """You are an expert automotive photography analyst. Analyze this image and extract structured metadata.
@@ -694,6 +719,12 @@ def dynamic_prompt_node(state: GraphState) -> dict:
                 )
         base_b64 = img.get("bytes_b64", "")
         car_url = img.get("image_url", "")
+        # V11 and other pipelines need base64; fetch from URL when bytes_b64 empty (S3/GCS)
+        if not base_b64 and car_url and pipeline_version in ("3", "4", "8", "10", "11"):
+            try:
+                base_b64 = _get_image_b64_for_classifier(img)
+            except Exception:
+                base_b64 = ""
         pl = {
             "index": idx,
             "base_image_b64": base_b64,
@@ -1444,7 +1475,12 @@ async def vertex_execution_node_async(
             idx, processed_b64 = out
             p = payloads[i]
             img = img_by_idx.get(idx, {})
-            orig_b64 = img.get("bytes_b64") or img.get("image_url") or ""
+            orig_b64 = img.get("bytes_b64") or ""
+            if not orig_b64 and img.get("image_url"):
+                try:
+                    orig_b64 = _get_image_b64_for_classifier(img)
+                except Exception:
+                    orig_b64 = img.get("image_url", "")
             meta = p.get("metadata") or next((pl["metadata"] for pl in payloads if pl["index"] == idx), None)
             if meta is None:
                 meta = AutomotiveImageMetadata(
@@ -1457,6 +1493,8 @@ async def vertex_execution_node_async(
             # Exterior + interior: enforce 4:3 aspect ratio (feature flag)
             if get_flag_bool("enforce_4_3", True) and getattr(meta, "view_category", None) in ("exterior", "interior", "detail"):
                 processed_b64 = _crop_to_aspect_ratio_4_3(processed_b64)
+            # Resize output to cap size (OUTPUT_MAX_DIM, OUTPUT_JPEG_QUALITY)
+            processed_b64 = _resize_output(processed_b64)
             model_info = _get_model_info(p)
             results.append(
                 {

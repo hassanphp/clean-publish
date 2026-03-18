@@ -80,9 +80,12 @@ export interface RegenerateParams {
 export async function regenerateImage(
   params: RegenerateParams
 ): Promise<{ processed_b64: string; model_info?: ModelInfo | null }> {
-  const res = await fetch(api("/regenerate"), {
+  const base = typeof window !== "undefined" ? "" : (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/$/, "");
+  const url = `${base}/api/v1/regenerate`;
+  const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
+    credentials: "include",
     body: JSON.stringify(params),
   });
   if (!res.ok) {
