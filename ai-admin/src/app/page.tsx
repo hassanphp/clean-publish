@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   login,
   processBatch,
@@ -13,6 +13,8 @@ import {
   adminDatasetStats,
   adminDownloadDataset,
   adminSmokeTest,
+  adminJudge,
+  type AdminJudgeResponse,
   type FeedbackItem,
 } from "@/lib/api";
 import {
@@ -57,6 +59,9 @@ export default function AdminHome() {
   const [images, setImages] = useState<File[]>([]);
   const [logs, setLogs] = useState<string[]>([]);
   const [results, setResults] = useState<ProcessedResult[]>([]);
+  const runResultsRef = useRef<ProcessedResult[]>([]);
+  const [judgeBusy, setJudgeBusy] = useState(false);
+  const [judgeResult, setJudgeResult] = useState<AdminJudgeResponse | null>(null);
   const [busy, setBusy] = useState(false);
   const [flags, setFlags] = useState<Record<string, string | null>>({});
 
@@ -106,6 +111,9 @@ export default function AdminHome() {
     setBusy(true);
     setLogs([]);
     setResults([]);
+    runResultsRef.current = [];
+    setJudgeResult(null);
+    setJudgeBusy(false);
     try {
       const studioB64 = await readAsDataURL(studio);
       const imgs = await Promise.all(images.map(readAsDataURL));
@@ -119,10 +127,35 @@ export default function AdminHome() {
         token,
         {
           onLog: (m) => setLogs((l) => [...l, m]),
-          onResult: (r) => setResults((rs) => [...rs, r]),
-          onComplete: () => {
+          onResult: (r) => {
+            runResultsRef.current.push(r);
+            setResults((rs) => [...rs, r]);
+          },
+          onComplete: async () => {
             setBusy(false);
-            showToast("success", "Processing complete");
+            try {
+              setJudgeBusy(true);
+              const judgeReq = {
+                pipeline_version: pipeline,
+                preview,
+                expected_aspect_ratio: "4:3",
+                use_llm_judge: true,
+                images: runResultsRef.current.map((r) => ({
+                  index: r.index,
+                  original_b64: r.original_b64,
+                  processed_b64: r.processed_b64,
+                  metadata: r.metadata,
+                  expected_view_category: r.metadata.view_category ?? null,
+                })),
+              };
+              const jr = await adminJudge(token, judgeReq);
+              setJudgeResult(jr);
+              showToast(jr.overall_pass ? "success" : "error", jr.summary ?? "Judge completed");
+            } catch (judgeErr) {
+              showToast("error", judgeErr instanceof Error ? judgeErr.message : "Judge failed");
+            } finally {
+              setJudgeBusy(false);
+            }
           },
           onError: (m) => {
             setLogs((l) => [...l, `ERROR: ${m}`]);
@@ -536,6 +569,67 @@ export default function AdminHome() {
                         <p className="text-sm text-slate-500 py-8 text-center">
                           Run a batch to see results
                         </p>
+                      )}
+                      {judgeBusy && (
+                        <div className="p-4 rounded-lg border border-sky-200 bg-sky-50">
+                          <p className="text-sm font-medium text-sky-700">Running MVP judge…</p>
+                          <p className="text-xs text-sky-600 mt-1">Checking aspect ratio + constraints.</p>
+                        </div>
+                      )}
+                      {judgeResult && results.length > 0 && (
+                        <div className="p-4 rounded-lg border border-slate-200 bg-white">
+                          <div className="flex items-center justify-between gap-4 mb-3">
+                            <div>
+                              <p className="text-sm font-semibold text-slate-900">MVP Judge</p>
+                              <p className="text-xs text-slate-500">{judgeResult.summary ?? ""}</p>
+                            </div>
+                            <span
+                              className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                                judgeResult.overall_pass
+                                  ? "bg-emerald-100 text-emerald-700"
+                                  : "bg-red-100 text-red-700"
+                              }`}
+                            >
+                              {judgeResult.overall_pass ? "PASS" : "FAIL"}
+                            </span>
+                          </div>
+                          <div className="space-y-2">
+                            {judgeResult.per_image.map((pi) => (
+                              <div
+                                key={pi.index}
+                                className="flex items-start justify-between gap-3 text-sm"
+                              >
+                                <div>
+                                  <p className="font-medium text-slate-900">
+                                    Image {pi.index + 1}
+                                  </p>
+                                  {pi.aspect_ratio !== null && (
+                                    <p className="text-xs text-slate-500">
+                                      Aspect: {pi.aspect_ratio.toFixed(3)}
+                                    </p>
+                                  )}
+                                  {pi.failed_constraints.length > 0 && (
+                                    <p className="text-xs text-red-600 mt-1">
+                                      Failed: {pi.failed_constraints.join(", ")}
+                                    </p>
+                                  )}
+                                  {pi.llm_reason && pi.failed_constraints.includes("llm_judge_fail") && (
+                                    <p className="text-xs text-slate-600 mt-1">{pi.llm_reason}</p>
+                                  )}
+                                </div>
+                                <span
+                                  className={`shrink-0 px-3 py-1 rounded-full text-xs font-semibold ${
+                                    pi.verdict
+                                      ? "bg-emerald-100 text-emerald-700"
+                                      : "bg-red-100 text-red-700"
+                                  }`}
+                                >
+                                  {pi.verdict ? "PASS" : "FAIL"}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
                       )}
                     </div>
                   </div>

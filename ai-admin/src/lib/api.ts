@@ -209,3 +209,46 @@ export async function adminSmokeTest(token: string): Promise<{ message: string; 
   if (!res.ok) throw new Error(`adminSmokeTest: ${res.status}`)
   return res.json()
 }
+
+// --- Judge (Fast MVP) ---
+export interface AdminJudgeImageInput {
+  index: number
+  original_b64: string
+  processed_b64: string
+  metadata: ProcessedResult["metadata"]
+  expected_view_category?: string | null
+}
+
+export interface AdminJudgeRequest {
+  pipeline_version: string
+  preview: boolean
+  expected_aspect_ratio?: string
+  use_llm_judge?: boolean
+  images: AdminJudgeImageInput[]
+}
+
+export interface AdminJudgeImageResult {
+  index: number
+  verdict: boolean
+  aspect_ratio: number | null
+  failed_constraints: string[]
+  llm_verdict: string | null
+  llm_reason: string | null
+}
+
+export interface AdminJudgeResponse {
+  overall_pass: boolean
+  failed_images: number[]
+  summary: string | null
+  per_image: AdminJudgeImageResult[]
+}
+
+export async function adminJudge(token: string, req: AdminJudgeRequest): Promise<AdminJudgeResponse> {
+  const res = await fetch(api("/admin/judge"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify(req),
+  })
+  if (!res.ok) throw new Error(`adminJudge: ${res.status}`)
+  return res.json()
+}
