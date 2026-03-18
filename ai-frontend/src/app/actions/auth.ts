@@ -28,13 +28,16 @@ export async function loginAction(email: string, password: string): Promise<{ ok
 
     const cookieStore = await cookies();
     const isProd = process.env.NODE_ENV === "production";
-    cookieStore.set("access_token", token, {
+    const opts: Parameters<typeof cookieStore.set>[2] = {
       httpOnly: true,
       secure: isProd,
       sameSite: "lax",
       maxAge: 60 * 60 * 24 * 7, // 7 days
       path: "/",
-    });
+    };
+    const domain = process.env.COOKIE_DOMAIN;
+    if (domain) opts.domain = domain; // e.g. .carveo.eu for www + apex
+    cookieStore.set("access_token", token, opts);
     return { ok: true };
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Login failed";
@@ -88,5 +91,8 @@ export async function registerAction(
 
 export async function logoutAction(): Promise<void> {
   const cookieStore = await cookies();
-  cookieStore.delete("access_token");
+  const opts: Parameters<typeof cookieStore.delete>[1] = { path: "/" };
+  const domain = process.env.COOKIE_DOMAIN;
+  if (domain) opts.domain = domain;
+  cookieStore.delete("access_token", opts);
 }
