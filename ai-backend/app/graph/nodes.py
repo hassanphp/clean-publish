@@ -171,18 +171,23 @@ def _detect_image_mime(image_bytes: bytes) -> str:
 
 def _ensure_openai_compatible_image(image_bytes: bytes) -> tuple[bytes, str]:
     """
-    Convert image to OpenAI-supported format (JPEG). Handles HEIC, BMP, TIFF, etc.
-    Returns (jpeg_bytes, "image/jpeg").
+    Convert image to OpenAI-supported format (JPEG). Handles HEIC, AVIF, BMP, TIFF, etc.
+    OpenAI only accepts png, jpeg, gif, webp. Returns (jpeg_bytes, "image/jpeg").
     """
+    # Register HEIC (iPhone) and AVIF openers for PIL
     try:
-        try:
-            from pillow_heif import register_heif_opener
+        from pillow_heif import register_heif_opener
+        register_heif_opener()
+    except ImportError:
+        pass
+    try:
+        import pillow_avif  # noqa: F401 - optional, registers AVIF with Pillow
+    except ImportError:
+        pass
 
-            register_heif_opener()
-        except ImportError:
-            pass
+    # Try PIL first (supports HEIC, AVIF with plugins)
+    try:
         from PIL import Image
-
         img = Image.open(io.BytesIO(image_bytes))
         if img.mode in ("RGBA", "P"):
             img = img.convert("RGB")
@@ -192,13 +197,19 @@ def _ensure_openai_compatible_image(image_bytes: bytes) -> tuple[bytes, str]:
         img.save(buf, format="JPEG", quality=92)
         return buf.getvalue(), "image/jpeg"
     except Exception:
-        # Fallback: try cv2 for common formats
-        nparr = np.frombuffer(image_bytes, np.uint8)
-        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-        if img is not None:
-            _, buf = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 92])
-            return buf.tobytes(), "image/jpeg"
-        raise
+        pass
+
+    # Fallback: cv2 for formats it supports (JPEG, PNG, BMP, TIFF, WebP)
+    nparr = np.frombuffer(image_bytes, np.uint8)
+    img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+    if img is not None:
+        _, buf = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 92])
+        return buf.tobytes(), "image/jpeg"
+
+    raise ValueError(
+        "Unsupported image format. Please use PNG, JPEG, GIF, or WebP. "
+        "HEIC/AVIF from phones may need conversion before upload."
+    )
 
 
 def _get_image_b64_for_classifier(img: dict) -> str:
@@ -293,13 +304,9 @@ def _classify_single_image_openai(image_b64: str, index: int) -> AutomotiveImage
     if "," in image_b64:
         image_b64 = image_b64.split(",", 1)[1]
     image_data = base64.b64decode(image_b64)
-    # Convert HEIC/BMP/TIFF etc. to JPEG - OpenAI only accepts png, jpeg, gif, webp
-    try:
-        jpeg_bytes, mime = _ensure_openai_compatible_image(image_data)
-        image_b64 = base64.b64encode(jpeg_bytes).decode()
-    except Exception as conv_err:
-        logger.warning("Image conversion failed, using original: %s", conv_err)
-        mime = _detect_image_mime(image_data)
+    # Convert HEIC/AVIF/BMP/TIFF etc. to JPEG - OpenAI only accepts png, jpeg, gif, webp
+    jpeg_bytes, mime = _ensure_openai_compatible_image(image_data)
+    image_b64 = base64.b64encode(jpeg_bytes).decode()
     client = OpenAI(api_key=api_key)
     model = os.getenv("OPENAI_METADATA_MODEL", "gpt-4o-mini")
     response = client.chat.completions.create(
@@ -399,11 +406,9 @@ def gemini_classifier_node(state: GraphState) -> dict:
         logs.append(f"Analyzing image {idx + 1}...")
         try:
             if use_openai:
-                if img.get("image_url") and not img.get("bytes_b64"):
-                    meta = _classify_image_url_openai(img["image_url"], idx)
-                else:
-                    b64 = _get_image_b64_for_classifier(img)
-                    meta = _classify_single_image_openai(b64, idx)
+                b64 = _get_image_b64_for_classifier(img)
+                # Always convert via b64 path so HEIC/AVIF from URLs get converted before OpenAI
+                meta = _classify_single_image_openai(b64, idx)
             else:
                 b64 = _get_image_b64_for_classifier(img)
                 meta = _classify_single_image(client, b64, idx)
@@ -1013,17 +1018,11 @@ def _edit_image_openai_gpt(payload: VertexPayload, studio_b64: str) -> tuple[int
     if "," in base_b64:
         base_b64 = base_b64.split(",", 1)[1]
     car_bytes = base64.b64decode(base_b64)
-    try:
-        car_bytes, _ = _ensure_openai_compatible_image(car_bytes)
-    except Exception:
-        pass
+    car_bytes, _ = _ensure_openai_compatible_image(car_bytes)
 
     studio_raw = studio_b64.split(",", 1)[1] if "," in studio_b64 else studio_b64
     studio_bytes = base64.b64decode(studio_raw)
-    try:
-        studio_bytes, _ = _ensure_openai_compatible_image(studio_bytes)
-    except Exception:
-        pass
+    studio_bytes, _ = _ensure_openai_compatible_image(studio_bytes)
 
     # Preview mode: downscale inputs before sending to the model to reduce cost.
     # This does not change full-quality results because preview is opt-in.
