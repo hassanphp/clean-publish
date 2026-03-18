@@ -126,6 +126,16 @@ export const dealerApi = createApi({
       },
       invalidatesTags: (_, __, { id }) => [{ type: "Dealer", id }],
     }),
+    deleteAsset: builder.mutation<
+      { deleted: boolean; asset_id: number },
+      { id: number; assetId: number }
+    >({
+      query: ({ id, assetId }) => ({
+        url: `/dealers/${id}/assets/${assetId}`,
+        method: "DELETE",
+      }),
+      invalidatesTags: (_, __, { id }) => [{ type: "Dealer", id }],
+    }),
   }),
 });
 
@@ -137,4 +147,5 @@ export const {
   useUpdateDealerMutation,
   useUpdatePreferencesMutation,
   useUploadAssetMutation,
+  useDeleteAssetMutation,
 } = dealerApi;
