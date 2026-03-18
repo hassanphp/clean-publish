@@ -39,5 +39,6 @@ def init_db():
         User, Job, AsyncJob, AsyncJobImage,
         Dealer, DealerPreferences, DealerAsset,
         Project, JobImage,
+        FeatureFlag, AdminFeedback,
     )
     Base.metadata.create_all(bind=engine)

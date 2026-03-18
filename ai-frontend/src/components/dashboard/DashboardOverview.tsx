@@ -8,6 +8,7 @@ import {
   Car,
   Image as ImageIcon,
   TrendingUp,
+  Building2,
 } from "lucide-react";
 import { TASKS } from "@/lib/createConstants";
 import type { TaskType, Order, StudioTemplate, BrandingConfig } from "@/types/create";
@@ -23,6 +24,9 @@ interface DashboardOverviewProps {
   t: Record<string, string>;
   theme: "light" | "dark";
   isLoggedIn: boolean;
+  /** Show optional dealer setup banner when user has no dealer profile */
+  hasNoDealer?: boolean;
+  onSetupDealer?: () => void;
 }
 
 const containerVariants = {
@@ -42,6 +46,8 @@ export function DashboardOverview({
   t,
   theme,
   isLoggedIn,
+  hasNoDealer = false,
+  onSetupDealer,
 }: DashboardOverviewProps) {
   const textPrimary = "text-[var(--foreground)]";
   const textSecondary = "text-gray-500";
@@ -58,6 +64,38 @@ export function DashboardOverview({
       animate="visible"
       className="space-y-8"
     >
+      {/* Optional dealer setup banner - shown when logged in but no dealer profile */}
+      {hasNoDealer && onSetupDealer && (
+        <motion.div
+          variants={itemVariants}
+          className={`rounded-2xl border border-amber-500/30 bg-amber-500/10 p-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4`}
+        >
+          <div className="flex items-start gap-4">
+            <div className="p-2.5 rounded-xl bg-amber-500/20 shrink-0">
+              <Building2 className="w-6 h-6 text-amber-500" />
+            </div>
+            <div>
+              <h3 className="font-bold text-[var(--foreground)] flex items-center gap-2">
+                Set up your dealer profile (optional)
+                <span className="text-xs font-normal text-amber-600 dark:text-amber-400 px-2 py-0.5 rounded-full bg-amber-500/20">
+                  Recommended
+                </span>
+              </h3>
+              <p className="mt-1 text-sm text-gray-500">
+                Add your logo, branding, and custom studio to get professional branded images. You can skip this and process images without branding.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={onSetupDealer}
+            className="shrink-0 rounded-xl bg-amber-500 px-6 py-2.5 font-bold text-zinc-950 hover:bg-amber-400 transition-colors flex items-center gap-2"
+          >
+            Set up profile
+            <ChevronRight className="w-4 h-4" />
+          </button>
+        </motion.div>
+      )}
+
       {/* Welcome + Stats row */}
       <motion.div variants={itemVariants} className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-6">
         <div>

@@ -14,7 +14,7 @@ interface DashboardDealerProfileProps {
   dealers: DealerInfo[];
   selectedDealerId: number | null;
   theme: "light" | "dark";
-  onNavigateToSettings: () => void;
+  onNavigateToSettings: (dealerId?: number) => void;
 }
 
 export function DashboardDealerProfile({
@@ -56,7 +56,7 @@ export function DashboardDealerProfile({
             consistent styling across all processed images.
           </p>
           <button
-            onClick={onNavigateToSettings}
+            onClick={() => onNavigateToSettings()}
             className="px-6 py-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-zinc-950 font-bold transition-colors"
           >
             Create dealer profile
@@ -112,7 +112,7 @@ export function DashboardDealerProfile({
                         <span className="text-xs text-gray-500">Not configured</span>
                       )}
                       <button
-                        onClick={onNavigateToSettings}
+                        onClick={() => onNavigateToSettings(dealer.id)}
                         className="px-4 py-2 rounded-lg text-sm font-medium bg-amber-500/20 text-amber-600 dark:text-amber-400 hover:bg-amber-500/30 transition-colors"
                       >
                         Edit
@@ -125,7 +125,7 @@ export function DashboardDealerProfile({
           </div>
 
           <button
-            onClick={onNavigateToSettings}
+            onClick={() => onNavigateToSettings()}
             className="w-full md:w-auto px-6 py-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-zinc-950 font-bold transition-colors"
           >
             Open dealer settings

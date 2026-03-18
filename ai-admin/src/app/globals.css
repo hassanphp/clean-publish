@@ -1,0 +1,24 @@
+@import "tailwindcss";
+
+:root {
+  --admin-bg: #f8fafc;
+  --admin-sidebar: #0f172a;
+  --admin-sidebar-hover: #1e293b;
+  --admin-accent: #0ea5e9;
+  --admin-accent-hover: #0284c7;
+  --admin-border: #e2e8f0;
+  --admin-card: #ffffff;
+  --admin-text: #0f172a;
+  --admin-muted: #64748b;
+  --admin-success: #10b981;
+  --admin-warning: #f59e0b;
+  --admin-error: #ef4444;
+}
+
+body {
+  font-family: "Inter", ui-sans-serif, system-ui, sans-serif;
+  background: var(--admin-bg);
+  color: var(--admin-text);
+  margin: 0;
+  min-height: 100vh;
+}

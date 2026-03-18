@@ -232,3 +232,18 @@ class FeatureFlag(Base):
     value = Column(String(1024), nullable=False, default="true")
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class AdminFeedback(Base):
+    """Internal feedback/notes for super admins - no AI needed."""
+
+    __tablename__ = "admin_feedback"
+
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String(255), nullable=False)
+    content = Column(Text, nullable=False)
+    category = Column(String(64), nullable=True)  # e.g. quality, bug, feature, dataset
+    status = Column(String(32), default="open")  # open, resolved, archived
+    created_by = Column(String(255), nullable=True)  # admin email
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

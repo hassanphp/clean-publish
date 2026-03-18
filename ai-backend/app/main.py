@@ -63,6 +63,7 @@ _cors_origins = [
     "https://api.carveo.eu",
     "https://carveo.eu",
     "https://www.carveo.eu",
+    "https://clean-publish-koxl.vercel.app",
 ]
 # Allow any Vercel preview/production (e.g. https://clean-publish.vercel.app)
 _cors_origin_regex = r"^https://[\w\-]+\.vercel\.app$"

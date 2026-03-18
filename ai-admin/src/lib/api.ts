@@ -25,7 +25,7 @@ export interface ProcessedResult {
   model_info?: ModelInfo | null
 }
 
-const API_BASE = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/$/, "")
+export const API_BASE = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/$/, "")
 const api = (path: string) => `${API_BASE}/api/v1${path}`
 
 export interface ProcessBatchParams {
@@ -124,4 +124,82 @@ export async function login(email: string, password: string): Promise<string> {
   if (!res.ok) throw new Error("Login failed")
   const data = await res.json()
   return data.access_token as string
+}
+
+// --- Admin endpoints ---
+
+export async function adminGetFlags(token: string): Promise<Record<string, string | null>> {
+  const res = await fetch(api("/admin/feature-flags"), { headers: { Authorization: `Bearer ${token}` } })
+  if (!res.ok) throw new Error(`adminGetFlags: ${res.status}`)
+  return res.json()
+}
+
+export async function adminSetFlag(token: string, key: string, value: string): Promise<void> {
+  const res = await fetch(api("/admin/feature-flags"), {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ key, value }),
+  })
+  if (!res.ok) throw new Error(`adminSetFlag: ${res.status}`)
+}
+
+// --- Feedback ---
+export interface FeedbackItem {
+  id: number
+  title: string
+  content: string
+  category: string | null
+  status: string
+  created_by: string | null
+  created_at: string | null
+}
+
+export async function adminListFeedback(token: string, status?: string, category?: string): Promise<FeedbackItem[]> {
+  const params = new URLSearchParams()
+  if (status) params.set("status", status)
+  if (category) params.set("category", category)
+  const res = await fetch(api(`/admin/feedback?${params}`), { headers: { Authorization: `Bearer ${token}` } })
+  if (!res.ok) throw new Error(`adminListFeedback: ${res.status}`)
+  return res.json()
+}
+
+export async function adminCreateFeedback(token: string, title: string, content: string, category?: string): Promise<{ id: number }> {
+  const res = await fetch(api("/admin/feedback"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ title, content, category }),
+  })
+  if (!res.ok) throw new Error(`adminCreateFeedback: ${res.status}`)
+  return res.json()
+}
+
+export async function adminUpdateFeedback(token: string, id: number, updates: { title?: string; content?: string; status?: string }): Promise<void> {
+  const res = await fetch(api(`/admin/feedback/${id}`), {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify(updates),
+  })
+  if (!res.ok) throw new Error(`adminUpdateFeedback: ${res.status}`)
+}
+
+// --- Dataset ---
+export async function adminDatasetStats(token: string, days?: number): Promise<{ last_n_days: number; count: number; total_completed: number }> {
+  const params = days ? `?days=${days}` : ""
+  const res = await fetch(api(`/admin/dataset/stats${params}`), { headers: { Authorization: `Bearer ${token}` } })
+  if (!res.ok) throw new Error(`adminDatasetStats: ${res.status}`)
+  return res.json()
+}
+
+export async function adminDownloadDataset(token: string, days?: number): Promise<Blob> {
+  const params = days ? `?days=${days}` : "?days=7"
+  const res = await fetch(api(`/admin/dataset/export${params}`), { headers: { Authorization: `Bearer ${token}` } })
+  if (!res.ok) throw new Error(`adminDownloadDataset: ${res.status}`)
+  return res.blob()
+}
+
+// --- Smoke test ---
+export async function adminSmokeTest(token: string): Promise<{ message: string; scripts: string[] }> {
+  const res = await fetch(api("/admin/smoke-test"), { headers: { Authorization: `Bearer ${token}` } })
+  if (!res.ok) throw new Error(`adminSmokeTest: ${res.status}`)
+  return res.json()
 }

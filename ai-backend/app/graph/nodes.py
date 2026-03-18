@@ -525,8 +525,8 @@ def dynamic_prompt_node(state: GraphState) -> dict:
                     f"CRITICAL: Keep the car EXACTLY as it is - same model, bumper, fog lights, every detail. Same view (rear=rear, front=front), same angle, no flip. "
                     f"CRITICAL: Preserve headlights, taillights, DRLs exactly - if on, keep on; if off, keep off. "
                     f"CRITICAL: Preserve wheel design, badges, logos, license plate area. "
-                    f"The studio must be empty - no people, no person shadows. Remove reflections on hood and body. "
-                    f"Add subtle natural floor shadows only from the car. Photorealistic result. "
+                    f"The studio must be empty - no people, no person shadows. Remove reflections on hood and body from the original environment - the car should match the new studio lighting. "
+                    f"Add subtle natural floor shadows only from the car. Do NOT add exaggerated glow, halos, or artificial circular floor rings - keep floor natural and subtle. Photorealistic result. "
                     + ("Center the car on the turntable/platform if present, without changing the original camera angle or framing. " if get_flag_bool("center_on_turntable", True) else "")
                     + f" {preserve_rules}"
                     + f" {branding_instruction}"

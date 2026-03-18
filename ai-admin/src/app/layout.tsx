@@ -1,9 +1,23 @@
+import type { Metadata } from "next";
+import "./globals.css";
+
+export const metadata: Metadata = {
+  title: "Carveo Super Admin",
+  description: "Enterprise admin panel for tests, feedback, and dataset management",
+};
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body style={{ fontFamily: 'Inter, sans-serif', margin: 0 }}>
-        <div style={{ padding: '16px', maxWidth: 1200, margin: '0 auto' }}>{children}</div>
-      </body>
+      <head>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        <link
+          href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+          rel="stylesheet"
+        />
+      </head>
+      <body className="antialiased">{children}</body>
     </html>
-  )
+  );
 }

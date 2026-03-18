@@ -82,10 +82,14 @@ export function CreateToolFlow() {
 
   const [view, setView] = useState<ViewState>("dashboard");
   const [dashboardSection, setDashboardSection] = useState<DashboardSection>("overview");
+  const [dealerIdForSettings, setDealerIdForSettings] = useState<number | null>(null);
   const [orders, setOrders] = useState<Order[]>([]);
   const [currentOrder, setCurrentOrder] = useState<Order | null>(null);
 
-  const { data: dealers = [] } = useGetDealersQuery(undefined, { skip: !isLoggedIn });
+  const { data: dealers = [] } = useGetDealersQuery(
+    { email: me?.email ?? undefined },
+    { skip: !isLoggedIn }
+  );
   const selectedDealerId = useSelector((s: { dealer?: { selectedDealerId: number | null } }) => s.dealer?.selectedDealerId ?? null);
 
   const needsImages = currentOrder?.projectId && !(currentOrder?.jobs?.length ?? 0);
@@ -455,6 +459,8 @@ export function CreateToolFlow() {
               t={t}
               theme={themeVal}
               isLoggedIn={isLoggedIn}
+              hasNoDealer={isLoggedIn && dealers.length === 0}
+              onSetupDealer={() => setDashboardSection("dealer-settings")}
             />
           );
         case "projects":
@@ -476,7 +482,10 @@ export function CreateToolFlow() {
               dealers={dealers}
               selectedDealerId={selectedDealerId}
               theme={themeVal}
-              onNavigateToSettings={() => setDashboardSection("dealer-settings")}
+              onNavigateToSettings={(dealerId?: number) => {
+                setDealerIdForSettings(dealerId ?? null);
+                setDashboardSection("dealer-settings");
+              }}
             />
           );
         case "dealer-settings":
@@ -484,6 +493,8 @@ export function CreateToolFlow() {
             <DashboardDealerSettings
               theme={themeVal}
               hasDealers={dealers.length > 0}
+              initialDealerId={dealerIdForSettings}
+              userEmail={me?.email ?? undefined}
             />
           );
         case "account":
