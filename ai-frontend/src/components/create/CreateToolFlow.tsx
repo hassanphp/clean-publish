@@ -487,7 +487,7 @@ export function CreateToolFlow() {
             />
           );
         case "account":
-          return <DashboardAccount user={me} theme={themeVal} />;
+          return <DashboardAccount user={me ?? null} theme={themeVal} />;
         default:
           return null;
       }
