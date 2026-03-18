@@ -220,3 +220,15 @@ class AsyncJobImage(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     job = relationship("AsyncJob", back_populates="images")
+
+
+class FeatureFlag(Base):
+    """Simple feature flag store (boolean or string)."""
+
+    __tablename__ = "feature_flags"
+
+    id = Column(Integer, primary_key=True, index=True)
+    key = Column(String(128), unique=True, index=True, nullable=False)
+    value = Column(String(1024), nullable=False, default="true")
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
