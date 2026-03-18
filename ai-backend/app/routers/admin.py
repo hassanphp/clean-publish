@@ -266,6 +266,32 @@ def _to_data_url(b64: str, fallback_mime: str = "image/jpeg") -> str:
     return f"data:{fallback_mime};base64,{raw}"
 
 
+def _normalize_b64_to_jpeg_data_url(b64: str) -> str:
+    """
+    Normalize any incoming base64 image to a supported OpenAI input:
+    - decodes the image with PIL
+    - re-encodes as JPEG
+    - returns data:image/jpeg;base64,...
+    """
+    try:
+        import base64
+        import io
+        from PIL import Image
+
+        raw = _strip_data_uri(b64)
+        img_bytes = base64.b64decode(raw)
+        with Image.open(io.BytesIO(img_bytes)) as im:
+            im = im.convert("RGB")
+            out_buf = io.BytesIO()
+            im.save(out_buf, format="JPEG", quality=95)
+            norm_raw = base64.b64encode(out_buf.getvalue()).decode("utf-8")
+        return f"data:image/jpeg;base64,{norm_raw}"
+    except Exception:
+        # Best-effort fallback: return original as a JPEG data URL (may still fail if the bytes aren't an image)
+        raw = _strip_data_uri(b64)
+        return f"data:image/jpeg;base64,{raw}"
+
+
 def _extract_first_json_object(text: str) -> dict[str, Any] | None:
     """Best-effort extraction for judge JSON."""
     try:
@@ -300,26 +326,9 @@ def _llm_judge_pass_fail(
         # If no OpenAI key, fall back to deterministic-only pass.
         return "PASS", "OPENAI_API_KEY not set; skipping LLM judge."
 
-    # Guess MIME types for better compatibility.
-    orig_mime = "image/jpeg"
-    proc_mime = "image/jpeg"
-    try:
-        orig_raw = _strip_data_uri(original_b64)
-        orig_bytes = base64.b64decode(orig_raw)
-        with Image.open(io.BytesIO(orig_bytes)) as im:
-            orig_mime = _guess_mime_from_pil(im.format)
-    except Exception:
-        pass
-    try:
-        proc_raw = _strip_data_uri(processed_b64)
-        proc_bytes = base64.b64decode(proc_raw)
-        with Image.open(io.BytesIO(proc_bytes)) as im:
-            proc_mime = _guess_mime_from_pil(im.format)
-    except Exception:
-        pass
-
-    original_url = _to_data_url(original_b64, fallback_mime=orig_mime)
-    processed_url = _to_data_url(processed_b64, fallback_mime=proc_mime)
+    # Normalize to JPEG for consistent OpenAI Vision compatibility.
+    original_url = _normalize_b64_to_jpeg_data_url(original_b64)
+    processed_url = _normalize_b64_to_jpeg_data_url(processed_b64)
 
     expected = expected_view_category or "unknown"
 
@@ -412,6 +421,225 @@ def admin_judge(body: AdminJudgeRequest, current_user: User = Depends(get_curren
     overall_pass = len(failed_images) == 0
     summary = "PASS" if overall_pass else "FAIL (see per-image details)"
     return AdminJudgeResponse(
+        overall_pass=overall_pass,
+        failed_images=failed_images,
+        summary=summary,
+        per_image=per_image,
+    )
+
+
+# --- Full Judge (baseline compare + likely prompt/node cause) ---
+
+
+class FullJudgeImageInput(BaseModel):
+    index: int
+    original_b64: str
+    current_processed_b64: str
+    baseline_processed_b64: str
+    metadata: dict = Field(default_factory=dict)
+    expected_view_category: str | None = Field(None, max_length=32)
+
+
+class AdminFullJudgeRequest(BaseModel):
+    pipeline_version: str = Field(default="11", max_length=4)
+    preview: bool = Field(default=False)
+    expected_aspect_ratio: str = Field(default="4:3", max_length=16)
+    images: list[FullJudgeImageInput]
+    # Optional: used to help the LLM reason about studio lighting.
+    target_studio_description: str | None = Field(None, max_length=5000)
+
+
+class FullJudgeImageResult(BaseModel):
+    index: int
+    verdict: bool
+    aspect_ratio: float | None = None
+    failed_constraints: list[str] = Field(default_factory=list)
+    llm_reason: str | None = None
+    likely_node_or_prompt_cause: str | None = None
+    recommended_changes: list[str] = Field(default_factory=list)
+
+
+class AdminFullJudgeResponse(BaseModel):
+    overall_pass: bool
+    failed_images: list[int]
+    summary: str | None = None
+    per_image: list[FullJudgeImageResult]
+
+
+def _prompt_control_hints(*, pipeline_version: str, view_category: str | None) -> str:
+    """
+    Hints to help the LLM map observed problems to likely nodes/prompts.
+    Keep this small and factual.
+    """
+    vc = view_category or "exterior"
+    if pipeline_version == "11":
+        if vc == "exterior":
+            return (
+                "V11 exterior uses dynamic_prompt_node with instructions to swap background to studio, "
+                "preserve metallic/glossy paint finish, remove unwanted reflections from hood/body "
+                "(while matching studio lighting), and keep camera angle/crop and 4:3 aspect."
+            )
+        if vc == "interior":
+            return (
+                "V11 interior uses dynamic_prompt_node with instructions to swap only the background visible in the cabin, "
+                "remove reflections on glossy interior surfaces, and never add new interior parts (no zoom-out / no new windows/steering parts)."
+            )
+        return "V11 detail uses dynamic_prompt_node with strict crop preservation and minimal edits for the selected component."
+    return f"Pipeline {pipeline_version} uses dynamic prompts + edit nodes. Focus on which prompt branch was selected for view_category={vc}."
+
+
+def _llm_full_compare_to_baseline(
+    *,
+    original_b64: str,
+    current_processed_b64: str,
+    baseline_processed_b64: str,
+    expected_view_category: str | None,
+    pipeline_version: str,
+    target_studio_description: str | None = None,
+) -> tuple[bool, list[str], str | None, str | None, list[str]]:
+    """
+    Returns:
+      (verdict_pass, failed_constraints, llm_reason, likely_cause, recommended_changes)
+    """
+    api_key = os.getenv("OPENAI_API_KEY", "").strip()
+    if not api_key:
+        # Deterministic fallback: baseline compare can't be done.
+        return True, [], "OPENAI_API_KEY not set; skipping full LLM compare.", None, []
+
+    from openai import OpenAI
+
+    original_url = _normalize_b64_to_jpeg_data_url(original_b64)
+    current_url = _normalize_b64_to_jpeg_data_url(current_processed_b64)
+    baseline_url = _normalize_b64_to_jpeg_data_url(baseline_processed_b64)
+
+    expected = expected_view_category or "unknown"
+    view_category_hint = expected
+    hints = _prompt_control_hints(pipeline_version=pipeline_version, view_category=view_category_hint)
+
+    studio_hint = (
+        f"Target studio description (may include reflections/floor guidance): {target_studio_description[:1200]}..."
+        if target_studio_description
+        else "Target studio description: (not provided)"
+    )
+
+    model = os.getenv("OPENAI_JUDGE_MODEL", os.getenv("OPENAI_METADATA_MODEL", "gpt-4o-mini"))
+    client = OpenAI(api_key=api_key)
+
+    prompt = {
+        "role": "user",
+        "content": [
+            {
+                "type": "text",
+                "text": (
+                    "You are a strict QA engineer for an automotive image enhancement pipeline.\n\n"
+                    "You will compare BASELINE (previous best) vs CURRENT output for the same ORIGINAL input.\n\n"
+                    "Hard constraints to respect:\n"
+                    "- Keep aspect ratio at 4:3 (fail if current is not 4:3).\n"
+                    "- No zoom-out or framing changes (keep crop/zoom).\n"
+                    "- Expected view_category must be respected: "
+                    "if interior, do NOT add new dashboard/steering/screens/windows; "
+                    "if exterior, do NOT remove car elements; keep paint finish metallic/glossy, but remove unwanted reflections from hood/body.\n"
+                    "- No hallucinated extra objects/symbols/letters.\n"
+                    "- Studio lighting consistency: reflections/shadows should match the studio.\n\n"
+                    f"Expected view_category: {expected}\n"
+                    f"{studio_hint}\n"
+                    f"Prompt/node control hints: {hints}\n\n"
+                    "Task:\n"
+                    "1) Decide if CURRENT is PASS relative to hard constraints.\n"
+                    "2) Identify the most likely cause: which prompt branch/node logic probably led to the difference vs BASELINE.\n"
+                    "3) Provide recommended code/prompt changes (short bullet strings) to fix the pipeline.\n\n"
+                    "Return ONLY JSON:\n"
+                    '{\n'
+                    '  "verdict": "PASS" | "FAIL",\n'
+                    '  "failed_constraints": ["constraint_key", ...],\n'
+                    '  "reason": "short explanation comparing baseline vs current",\n'
+                    '  "likely_node_or_prompt_cause": "one sentence",\n'
+                    '  "recommended_changes": ["change 1", "change 2"]\n'
+                    "}\n"
+                ),
+            },
+            {"type": "image_url", "image_url": {"url": original_url}},
+            {"type": "image_url", "image_url": {"url": baseline_url}},
+            {"type": "image_url", "image_url": {"url": current_url}},
+        ],
+    }
+
+    resp = client.chat.completions.create(
+        model=model,
+        messages=[{"role": "system", "content": "Return ONLY valid JSON."}, prompt],
+        temperature=0.1,
+        max_tokens=700,
+    )
+    text = (resp.choices[0].message.content or "").strip()
+    parsed = _extract_first_json_object(text) or {}
+
+    verdict = str(parsed.get("verdict", "FAIL")).upper()
+    verdict_pass = verdict == "PASS"
+    failed_constraints = parsed.get("failed_constraints") or []
+    if not isinstance(failed_constraints, list):
+        failed_constraints = []
+    llm_reason = parsed.get("reason") if isinstance(parsed.get("reason"), str) else None
+    likely_cause = parsed.get("likely_node_or_prompt_cause") if isinstance(parsed.get("likely_node_or_prompt_cause"), str) else None
+    recommended_changes = parsed.get("recommended_changes") or []
+    if not isinstance(recommended_changes, list):
+        recommended_changes = []
+
+    return verdict_pass, failed_constraints, llm_reason, likely_cause, recommended_changes
+
+
+@router.post("/judge/full", response_model=AdminFullJudgeResponse)
+def admin_full_judge(body: AdminFullJudgeRequest, current_user: User = Depends(get_current_user)) -> AdminFullJudgeResponse:
+    _require_superadmin(current_user)
+
+    per_image: list[FullJudgeImageResult] = []
+    failed_images: list[int] = []
+
+    for img in body.images:
+        aspect_ok, ratio = _check_aspect_ratio_4_3(img.current_processed_b64)
+        failed_constraints: list[str] = []
+
+        if not aspect_ok:
+            failed_constraints.append("aspect_ratio_4_3")
+
+        verdict_pass = aspect_ok
+        llm_reason: str | None = None
+        likely_cause: str | None = None
+        recommended_changes: list[str] = []
+
+        if aspect_ok:
+            baseline_ok = bool(img.baseline_processed_b64)
+            if baseline_ok:
+                verdict_pass, llm_failed_constraints, llm_reason, likely_cause, recommended_changes = _llm_full_compare_to_baseline(
+                    original_b64=img.original_b64,
+                    current_processed_b64=img.current_processed_b64,
+                    baseline_processed_b64=img.baseline_processed_b64,
+                    expected_view_category=img.expected_view_category,
+                    pipeline_version=body.pipeline_version,
+                    target_studio_description=body.target_studio_description,
+                )
+                failed_constraints.extend([c for c in (llm_failed_constraints or []) if c not in failed_constraints])
+            else:
+                llm_reason = "No baseline_processed_b64 provided; skipping baseline compare."
+
+        if not verdict_pass:
+            failed_images.append(img.index)
+
+        per_image.append(
+            FullJudgeImageResult(
+                index=img.index,
+                verdict=verdict_pass,
+                aspect_ratio=ratio,
+                failed_constraints=failed_constraints,
+                llm_reason=llm_reason,
+                likely_node_or_prompt_cause=likely_cause,
+                recommended_changes=recommended_changes,
+            )
+        )
+
+    overall_pass = len(failed_images) == 0
+    summary = "PASS" if overall_pass else "FAIL (see full judge details)"
+
+    return AdminFullJudgeResponse(
         overall_pass=overall_pass,
         failed_images=failed_images,
         summary=summary,

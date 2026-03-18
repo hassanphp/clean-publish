@@ -521,11 +521,11 @@ def dynamic_prompt_node(state: GraphState) -> dict:
                 prompt = (
                     f"Replace the background of the first image (the car) with the studio environment from the second reference image: {target_short}. "
                     f"CRITICAL: {v11_color} No vibrant/glossy/new-car look. Minimal lighting change - like original with background swapped. "
-                    f"CRITICAL: Preserve EXACT metallic/glossy paint finish - if original has sharp reflections and highlights, keep them. Do NOT flatten to matte. "
+                    f"CRITICAL: Preserve metallic/glossy paint finish (real specular highlights), but remove unwanted environment reflections so lighting matches the new studio. Do NOT flatten to matte. "
                     f"CRITICAL: Keep the car EXACTLY as it is - same model, bumper, fog lights, every detail. Same view (rear=rear, front=front), same angle, no flip. "
                     f"CRITICAL: Preserve headlights, taillights, DRLs exactly - if on, keep on; if off, keep off. "
                     f"CRITICAL: Preserve wheel design, badges, logos, license plate area. "
-                    f"The studio must be empty - no people, no person shadows. Remove reflections on hood and body from the original environment - the car should match the new studio lighting. "
+                    f"The studio must be empty - no people, no person shadows. Remove reflections on hood and body from the original environment; keep paint highlights but match studio lighting. "
                     f"Add subtle natural floor shadows only from the car. Do NOT add exaggerated glow, halos, or artificial circular floor rings - keep floor natural and subtle. Photorealistic result. "
                     + ("Center the car on the turntable/platform if present, without changing the original camera angle or framing. " if get_flag_bool("center_on_turntable", True) else "")
                     + f" {preserve_rules}"

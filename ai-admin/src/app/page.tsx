@@ -14,7 +14,9 @@ import {
   adminDownloadDataset,
   adminSmokeTest,
   adminJudge,
+  adminFullJudge,
   type AdminJudgeResponse,
+  type AdminFullJudgeResponse,
   type FeedbackItem,
 } from "@/lib/api";
 import {
@@ -62,6 +64,8 @@ export default function AdminHome() {
   const runResultsRef = useRef<ProcessedResult[]>([]);
   const [judgeBusy, setJudgeBusy] = useState(false);
   const [judgeResult, setJudgeResult] = useState<AdminJudgeResponse | null>(null);
+  const [fullJudgeBusy, setFullJudgeBusy] = useState(false);
+  const [fullJudgeResult, setFullJudgeResult] = useState<AdminFullJudgeResponse | null>(null);
   const [busy, setBusy] = useState(false);
   const [flags, setFlags] = useState<Record<string, string | null>>({});
 
@@ -78,6 +82,9 @@ export default function AdminHome() {
   } | null>(null);
   const [datasetLoading, setDatasetLoading] = useState(false);
   const [smokeInfo, setSmokeInfo] = useState<{ message: string; scripts: string[] } | null>(null);
+
+  // Previous best baseline for full judge (session-local human-in-the-loop).
+  const [baselineResults, setBaselineResults] = useState<ProcessedResult[] | null>(null);
 
   const showToast = useCallback((type: "success" | "error", msg: string) => {
     setToast({ type, msg });
@@ -113,7 +120,9 @@ export default function AdminHome() {
     setResults([]);
     runResultsRef.current = [];
     setJudgeResult(null);
+    setFullJudgeResult(null);
     setJudgeBusy(false);
+    setFullJudgeBusy(false);
     try {
       const studioB64 = await readAsDataURL(studio);
       const imgs = await Promise.all(images.map(readAsDataURL));
@@ -131,7 +140,7 @@ export default function AdminHome() {
             runResultsRef.current.push(r);
             setResults((rs) => [...rs, r]);
           },
-          onComplete: async () => {
+          onComplete: async (d) => {
             setBusy(false);
             try {
               setJudgeBusy(true);
@@ -151,6 +160,50 @@ export default function AdminHome() {
               const jr = await adminJudge(token, judgeReq);
               setJudgeResult(jr);
               showToast(jr.overall_pass ? "success" : "error", jr.summary ?? "Judge completed");
+
+              // If MVP judge passes, bootstrap "previous best" baseline (human-in-the-loop via optional override).
+              if (jr.overall_pass) {
+                setBaselineResults((prev) => (prev ? prev : runResultsRef.current.slice()));
+              }
+
+              // Full judge: compare current against previous best baseline.
+              const baseline = baselineResults;
+              if (baseline && baseline.length > 0) {
+                const baselineByIndex = new Map<number, ProcessedResult>(
+                  baseline.map((b) => [b.index, b])
+                );
+                const canCompare = runResultsRef.current.every((r) => baselineByIndex.has(r.index));
+
+                if (canCompare) {
+                  setFullJudgeBusy(true);
+                  try {
+                    const fullReq: any = {
+                      pipeline_version: pipeline,
+                      preview,
+                      expected_aspect_ratio: "4:3",
+                      target_studio_description: d?.target_studio_description ?? null,
+                      images: runResultsRef.current.map((r) => {
+                        const b = baselineByIndex.get(r.index)!;
+                        return {
+                          index: r.index,
+                          original_b64: r.original_b64,
+                          current_processed_b64: r.processed_b64,
+                          baseline_processed_b64: b.processed_b64,
+                          metadata: r.metadata,
+                          expected_view_category: r.metadata.view_category ?? null,
+                        };
+                      }),
+                    };
+                    const fjr = await adminFullJudge(token, fullReq);
+                    setFullJudgeResult(fjr);
+                    showToast(fjr.overall_pass ? "success" : "error", fjr.summary ?? "Full judge completed");
+                  } catch (fullErr) {
+                    showToast("error", fullErr instanceof Error ? fullErr.message : "Full judge failed");
+                  } finally {
+                    setFullJudgeBusy(false);
+                  }
+                }
+              }
             } catch (judgeErr) {
               showToast("error", judgeErr instanceof Error ? judgeErr.message : "Judge failed");
             } finally {
@@ -425,6 +478,36 @@ export default function AdminHome() {
                           <p className="text-xs text-slate-500 mt-1">{images.length} file(s) selected</p>
                         )}
                       </div>
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1.5">
+                          Or upload test folder (e.g. `pics`)
+                        </label>
+                        <input
+                          type="file"
+                          multiple
+                          // @ts-expect-error: webkitdirectory is supported by Chromium-based browsers for folder selection.
+                          webkitdirectory="true"
+                          directory="true"
+                          accept="image/*"
+                          onChange={(e) => {
+                            const files = Array.from(e.target.files || []);
+                            const sorted = files
+                              .filter((f) => f.type.startsWith("image/"))
+                              .sort((a, b) => {
+                                const ap = (a as any).webkitRelativePath || a.name;
+                                const bp = (b as any).webkitRelativePath || b.name;
+                                return ap.localeCompare(bp);
+                              });
+                            setImages(sorted);
+                          }}
+                          className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-sky-50 file:text-sky-700 file:font-medium file:cursor-pointer hover:file:bg-sky-100"
+                        />
+                        {images.length > 0 && (
+                          <p className="text-xs text-slate-500 mt-1">
+                            {images.length} test image(s) loaded from folder / selection
+                          </p>
+                        )}
+                      </div>
                       <button
                         disabled={!canRun || busy}
                         onClick={onRun}
@@ -622,6 +705,89 @@ export default function AdminHome() {
                                     pi.verdict
                                       ? "bg-emerald-100 text-emerald-700"
                                       : "bg-red-100 text-red-700"
+                                  }`}
+                                >
+                                  {pi.verdict ? "PASS" : "FAIL"}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {fullJudgeBusy && (
+                        <div className="p-4 rounded-lg border border-sky-200 bg-sky-50">
+                          <p className="text-sm font-medium text-sky-700">Running Full judge…</p>
+                          <p className="text-xs text-sky-600 mt-1">
+                            Comparing against previous best baseline and explaining likely prompt/node cause.
+                          </p>
+                        </div>
+                      )}
+                      {fullJudgeResult && results.length > 0 && (
+                        <div
+                          className={`p-4 rounded-lg border ${
+                            fullJudgeResult.overall_pass
+                              ? "border-emerald-200 bg-emerald-50"
+                              : "border-red-200 bg-red-50"
+                          }`}
+                        >
+                          <div className="flex items-center justify-between gap-4 mb-3">
+                            <div>
+                              <p className="text-sm font-semibold text-slate-900">Full Judge</p>
+                              <p className="text-xs text-slate-600">{fullJudgeResult.summary ?? ""}</p>
+                            </div>
+                            <span
+                              className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                                fullJudgeResult.overall_pass
+                                  ? "bg-emerald-100 text-emerald-700"
+                                  : "bg-red-100 text-red-700"
+                              }`}
+                            >
+                              {fullJudgeResult.overall_pass ? "PASS" : "FAIL"}
+                            </span>
+                          </div>
+
+                          {!fullJudgeResult.overall_pass && (
+                            <div className="mb-4 flex items-center gap-3">
+                              <span className="text-xs font-semibold text-red-700 bg-red-100 px-2 py-1 rounded">
+                                Not updating baseline automatically.
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => setBaselineResults(runResultsRef.current.slice())}
+                                disabled={fullJudgeBusy}
+                                className="px-3 py-2 rounded-lg text-xs font-black bg-red-500 hover:bg-red-600 text-white transition-colors"
+                              >
+                                Set current as baseline anyway
+                              </button>
+                            </div>
+                          )}
+
+                          <div className="space-y-2">
+                            {fullJudgeResult.per_image.map((pi) => (
+                              <div key={pi.index} className="flex items-start justify-between gap-3 text-sm">
+                                <div className="min-w-0">
+                                  <p className="font-medium text-slate-900">Image {pi.index + 1}</p>
+                                  {pi.aspect_ratio !== null && (
+                                    <p className="text-xs text-slate-500">Aspect: {pi.aspect_ratio.toFixed(3)}</p>
+                                  )}
+                                  {pi.failed_constraints.length > 0 && (
+                                    <p className="text-xs text-red-600 mt-1">Failed: {pi.failed_constraints.join(", ")}</p>
+                                  )}
+                                  {pi.llm_reason && <p className="text-xs text-slate-700 mt-1">{pi.llm_reason}</p>}
+                                  {pi.likely_node_or_prompt_cause && (
+                                    <p className="text-xs text-slate-700 mt-2">
+                                      Likely cause: {pi.likely_node_or_prompt_cause}
+                                    </p>
+                                  )}
+                                  {pi.recommended_changes.length > 0 && (
+                                    <p className="text-xs text-slate-600 mt-1">
+                                      Recommended changes: {pi.recommended_changes.join(" | ")}
+                                    </p>
+                                  )}
+                                </div>
+                                <span
+                                  className={`shrink-0 px-3 py-1 rounded-full text-xs font-semibold ${
+                                    pi.verdict ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"
                                   }`}
                                 >
                                   {pi.verdict ? "PASS" : "FAIL"}

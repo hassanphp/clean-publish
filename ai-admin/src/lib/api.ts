@@ -252,3 +252,49 @@ export async function adminJudge(token: string, req: AdminJudgeRequest): Promise
   if (!res.ok) throw new Error(`adminJudge: ${res.status}`)
   return res.json()
 }
+
+// --- Full Judge (baseline compare) ---
+
+export interface AdminFullJudgeImageInput {
+  index: number
+  original_b64: string
+  current_processed_b64: string
+  baseline_processed_b64: string
+  metadata: ProcessedResult["metadata"]
+  expected_view_category?: string | null
+}
+
+export interface AdminFullJudgeRequest {
+  pipeline_version: string
+  preview: boolean
+  expected_aspect_ratio?: string
+  images: AdminFullJudgeImageInput[]
+  target_studio_description?: string | null
+}
+
+export interface AdminFullJudgeImageResult {
+  index: number
+  verdict: boolean
+  aspect_ratio: number | null
+  failed_constraints: string[]
+  llm_reason: string | null
+  likely_node_or_prompt_cause: string | null
+  recommended_changes: string[]
+}
+
+export interface AdminFullJudgeResponse {
+  overall_pass: boolean
+  failed_images: number[]
+  summary: string | null
+  per_image: AdminFullJudgeImageResult[]
+}
+
+export async function adminFullJudge(token: string, req: AdminFullJudgeRequest): Promise<AdminFullJudgeResponse> {
+  const res = await fetch(api("/admin/judge/full"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify(req),
+  })
+  if (!res.ok) throw new Error(`adminFullJudge: ${res.status}`)
+  return res.json()
+}
