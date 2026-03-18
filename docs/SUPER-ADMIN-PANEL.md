@@ -4,9 +4,22 @@ Internal panel for running tests, tracking feedback, and exporting datasets from
 
 ## Access
 
-- **URL**: Deploy ai-admin (e.g. `https://admin.carveo.eu` or run locally)
-- **Auth**: Login with an email in `SUPERADMIN_EMAILS` (comma-separated in `.env`)
+- **URL**: Deploy ai-admin (e.g. `https://clean-publish-koxl.vercel.app` or run locally)
+- **Auth**: Login with an email in `SUPERADMIN_EMAILS` (comma-separated in backend `.env`)
 - **Default**: `dealer@domain.com` / `Admin@321` (from seed)
+
+### 403 Forbidden on feature-flags
+
+If you get **403** after login, add your email to `SUPERADMIN_EMAILS` on the backend server:
+
+```bash
+# On EC2, edit the backend .env:
+echo "SUPERADMIN_EMAILS=dealer@domain.com,you@example.com" >> /home/ubuntu/clean-publish/ai-backend/.env
+# Then restart:
+sudo systemctl restart carveo-backend
+```
+
+Or set in your deployment environment (Vercel, etc.) if the backend reads from there.
 
 ## Features
 
