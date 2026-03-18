@@ -70,13 +70,16 @@ export async function registerAction(
 
     const cookieStore = await cookies();
     const isProd = process.env.NODE_ENV === "production";
-    cookieStore.set("access_token", token, {
+    const opts: Parameters<typeof cookieStore.set>[2] = {
       httpOnly: true,
       secure: isProd,
       sameSite: "lax",
       maxAge: 60 * 60 * 24 * 7,
       path: "/",
-    });
+    };
+    const domain = process.env.COOKIE_DOMAIN;
+    if (domain) opts.domain = domain;
+    cookieStore.set("access_token", token, opts);
     return { ok: true };
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Registration failed";

@@ -87,9 +87,14 @@ export WEB_CONCURRENCY=2   # same as -w if you use Gunicorn’s default
 ## Vercel (frontend)
 
 1. **Connect repo:** Import the repo; set root to **ai-frontend** (or use a monorepo config).
-2. **Env var:** In Vercel project → Settings → Environment Variables, add:  
-   `NEXT_PUBLIC_API_URL` = `https://api.carveo.eu`  
-   (Required so the frontend calls the remote backend.)
+2. **Env vars:** In Vercel project → Settings → Environment Variables, add:
+
+   | Key | Value | Notes |
+   |-----|-------|-------|
+   | `NEXT_PUBLIC_API_URL` | `https://api.carveo.eu` | Required so the frontend calls the remote backend. |
+   | `COOKIE_DOMAIN` | `.carveo.eu` | **Required** when using both www.carveo.eu and carveo.eu. Leading dot shares cookie across subdomains. Omit for localhost. |
+
+   **Cookie domain fix for 401:** If you get 401 on project images when switching between www and apex, add `COOKIE_DOMAIN=.carveo.eu` (exact value, with leading dot). Redeploy after adding.
 3. **Local:** `ai-frontend/.env.example` and `.env.local` are set to `https://api.carveo.eu`; `npm run dev` uses the remote API.
 4. **CORS:** Backend allows `https://api.carveo.eu`, `https://carveo.eu`, `https://www.carveo.eu` and your Vercel origin; add more in `_cors_origins` in `ai-backend/app/main.py` if needed.
 
@@ -123,6 +128,7 @@ Backend-only (EC2 + ALB + RDS + Redis) ≈ **\$100–110/mo**; reduce with reser
 2. **Frontend (Vercel)**  
    - Import repo, set root to **ai-frontend**.  
    - Add env: **NEXT_PUBLIC_API_URL** = `https://api.carveo.eu`.  
+   - Add env: **COOKIE_DOMAIN** = `.carveo.eu` (for www + apex auth; fix 401 on project images).  
    - Deploy. CORS allows any `https://*.vercel.app` origin.
 3. **Login** – Use seeded admin: **dealer@domain.com** / **Admin@321** (100 credits).
 4. **Custom domain (optional)** – In Vercel, add carveo.eu or www.carveo.eu and point DNS as instructed.

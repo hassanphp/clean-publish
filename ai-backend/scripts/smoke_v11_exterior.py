@@ -4,7 +4,7 @@ Smoke test for V11 pipeline (EXTERIOR):
 - Logs in with seeded admin to obtain JWT
 - Uses demo exterior input and a studio reference image
 - Streams SSE from /api/v1/process-batch
-- Verifies processed result is ~4:3 (cropping enforcement)
+- Verifies processed result is received (full studio, no crop)
 
 Run on EC2:
   cd ~/clean-publish/ai-backend
@@ -160,7 +160,7 @@ def main():
         print("FAIL: No processed image received")
         sys.exit(1)
 
-    # Verify 4:3
+    # Verify we got a valid image (no 4:3 crop - full studio preserved)
     try:
         raw = processed_b64.split(",", 1)[-1]
         img_bytes = base64.b64decode(raw)
@@ -168,16 +168,9 @@ def main():
 
         with Image.open(io.BytesIO(img_bytes)) as im:
             w, h = im.size
-        ratio = w / h if h else 0
-        target = 4 / 3
-        ok = abs(ratio - target) < 0.02
-        print(f"Processed size: {w}x{h}  ratio={ratio:.4f}  (target 1.3333)")
-        if ok:
-            print("PASS: Exterior output is ~4:3 as expected")
-            sys.exit(0)
-        else:
-            print("WARN: Exterior output is not ~4:3")
-            sys.exit(3)
+        print(f"Processed size: {w}x{h}")
+        print("PASS: Exterior output received (full studio, no crop)")
+        sys.exit(0)
     except Exception as e:
         print("FAIL: Could not decode processed image:", e)
         sys.exit(1)

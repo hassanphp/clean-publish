@@ -1504,10 +1504,8 @@ async def vertex_execution_node_async(
                     dominant_color="unknown",
                     suggested_edit_mode="product-image",
                 )
-            # Exterior only: crop to 4:3 (match old bismillah - interior/detail left as-is)
-            if getattr(meta, "view_category", None) == "exterior":
-                processed_b64 = _crop_to_aspect_ratio_4_3(processed_b64)
-            # V11: no _resize_output (match old bismillah - full resolution, no downscale)
+            # No 4:3 crop - preserve full studio image (user requested: do not cut studio)
+            # V11: no _resize_output (full resolution, no downscale)
             model_info = _get_model_info(p)
             results.append(
                 {
