@@ -20,6 +20,7 @@ export interface UserResponse {
   name: string | null;
   credits: number;
   created_at: string;
+  is_superadmin?: boolean;
 }
 
 export interface ProjectResponse {
@@ -132,6 +133,17 @@ export const apiSlice = createApi({
         params: { filename, content_type },
       }),
     }),
+    addCredits: builder.mutation<
+      { ok: boolean; user_id: number; credits: number },
+      { user_id?: number; user_email?: string; amount: number }
+    >({
+      query: (body) => ({
+        url: "/api/v1/admin/credits",
+        method: "POST",
+        body,
+      }),
+      invalidatesTags: ["User"],
+    }),
     createCheckout: builder.mutation<
       { url: string; session_id: string },
       { plan_id: string; success_url?: string; cancel_url?: string }
@@ -169,4 +181,5 @@ export const {
   useLazyGetUploadUrlQuery,
   useProcessBatchMutation,
   useCreateCheckoutMutation,
+  useAddCreditsMutation,
 } = apiSlice;

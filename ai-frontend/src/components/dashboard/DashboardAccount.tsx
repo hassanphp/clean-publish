@@ -1,8 +1,10 @@
 "use client";
 
+import { useState } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
-import { User, CreditCard, Mail, Calendar, ExternalLink } from "lucide-react";
+import { User, CreditCard, Mail, Calendar, ExternalLink, Plus } from "lucide-react";
+import { useAddCreditsMutation, useGetMeQuery } from "@/lib/store/apiSlice";
 
 interface UserInfo {
   id: number;
@@ -15,9 +17,14 @@ interface UserInfo {
 interface DashboardAccountProps {
   user: UserInfo | null;
   theme: "light" | "dark";
+  isSuperadmin?: boolean;
 }
 
-export function DashboardAccount({ user, theme }: DashboardAccountProps) {
+export function DashboardAccount({ user, theme, isSuperadmin = false }: DashboardAccountProps) {
+  const [addCredits, { isLoading: addingCredits }] = useAddCreditsMutation();
+  const { refetch } = useGetMeQuery();
+  const [creditsAmount, setCreditsAmount] = useState(100);
+  const [addCreditsError, setAddCreditsError] = useState<string | null>(null);
   const textPrimary = "text-[var(--foreground)]";
   const textSecondary = "text-gray-500";
   const cardBase = "rounded-2xl border border-[var(--border)] bg-[var(--card)]";
@@ -102,6 +109,42 @@ export function DashboardAccount({ user, theme }: DashboardAccountProps) {
             Buy credits
             <ExternalLink className="w-4 h-4" />
           </Link>
+          {isSuperadmin && (
+            <div className="mt-6 pt-6 border-t border-[var(--border)]">
+              <p className="text-sm font-medium mb-2 text-amber-600 dark:text-amber-400">Admin: Add credits to self</p>
+              <div className="flex gap-2 flex-wrap">
+                <input
+                  type="number"
+                  min={1}
+                  max={10000}
+                  value={creditsAmount}
+                  onChange={(e) => {
+                    setCreditsAmount(Math.max(1, parseInt(e.target.value, 10) || 100));
+                    setAddCreditsError(null);
+                  }}
+                  className="w-24 px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--background)] text-sm"
+                />
+                <button
+                  onClick={async () => {
+                    setAddCreditsError(null);
+                    try {
+                      await addCredits({ user_id: user.id, amount: creditsAmount }).unwrap();
+                      refetch();
+                    } catch (e: unknown) {
+                      const err = e as { data?: { detail?: string } };
+                      setAddCreditsError(err?.data?.detail ?? "Failed to add credits");
+                    }
+                  }}
+                  disabled={addingCredits}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm disabled:opacity-50"
+                >
+                  <Plus className="w-4 h-4" />
+                  {addingCredits ? "Adding…" : "Add"}
+                </button>
+              </div>
+              {addCreditsError && <p className="mt-2 text-sm text-red-500">{addCreditsError}</p>}
+            </div>
+          )}
         </div>
       </div>
     </motion.div>

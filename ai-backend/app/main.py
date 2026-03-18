@@ -309,51 +309,62 @@ async def process_batch(
             dealer_branding = None
             if branding and pipeline_version in ("6", "7", "11") and (branding.get("logo_3d_wall_enabled") or branding.get("license_plate_enabled")):
                 dealer_branding = branding
-            batch_state = dict(initial_state)
-            batch_state["dealer_branding"] = dealer_branding
-
-            final_state = None
-            async for event in graph.astream(
-                batch_state,
-                config=config,
-                stream_mode="updates",
-            ):
-                for node_name, state_update in event.items():
-                    logs = state_update.get("logs", [])
-                    for log in logs:
-                        yield sse_format("log", {"message": log})
-                    final_state = state_update
-
-            results = (final_state or {}).get("results", [])
-            for r in results:
-                meta = r.get("metadata")
-                meta_dict = meta.model_dump() if hasattr(meta, "model_dump") else (meta or {})
-                processed_b64 = r.get("processed_b64", "")
-                view_cat = meta_dict.get("view_category", "exterior") if isinstance(meta_dict, dict) else getattr(meta, "view_category", "exterior")
-                if branding and processed_b64:
-                    try:
-                        from app.branding import overlay_logo_corner, overlay_logo_license_plate, overlay_logo_wall
-                        logo_b64 = branding.get("logo_b64")
-                        lp_logo = branding.get("license_plate_logo_b64") or logo_b64
-                        if branding.get("logo_corner_enabled") or branding.get("logo_corner"):
-                            if logo_b64:
-                                pos = branding.get("logo_corner_position", "right")
-                                processed_b64 = overlay_logo_corner(processed_b64, logo_b64, position=pos, view_category=view_cat)
-                        if branding.get("license_plate_enabled") and lp_logo and view_cat in ("exterior",) and pipeline_version not in ("6", "7", "11"):
-                            processed_b64 = overlay_logo_license_plate(processed_b64, lp_logo)
-                        if branding.get("logo_3d_wall_enabled") and logo_b64 and pipeline_version not in ("6", "7", "11"):
-                            processed_b64 = overlay_logo_wall(processed_b64, logo_b64)
-                    except Exception:
-                        pass
-                result_item = {
-                    "index": r["index"],
-                    "original_b64": r.get("original_b64", ""),
-                    "processed_b64": processed_b64,
-                    "metadata": meta_dict if isinstance(meta_dict, dict) else (meta.model_dump() if hasattr(meta, "model_dump") else {}),
-                    "error_message": r.get("error_message"),
-                    "model_info": r.get("model_info"),
+            for img_item in images:
+                single_image_state = {
+                    "images": [img_item],
+                    "target_studio_description": target_description,
+                    "pipeline_version": pipeline_version,
+                    "studio_reference_b64": studio_b64,
+                    "preview": preview,
+                    "dealer_branding": dealer_branding,
+                    "metadata": [],
+                    "vertex_payloads": [],
+                    "results": [],
+                    "logs": [],
+                    "error": None,
                 }
-                yield sse_format("result", result_item)
+                final_state = None
+                async for event in graph.astream(
+                    single_image_state,
+                    config=config,
+                    stream_mode="updates",
+                ):
+                    for node_name, state_update in event.items():
+                        logs = state_update.get("logs", [])
+                        for log in logs:
+                            yield sse_format("log", {"message": log})
+                        final_state = state_update
+
+                results = (final_state or {}).get("results", [])
+                for r in results:
+                    meta = r.get("metadata")
+                    meta_dict = meta.model_dump() if hasattr(meta, "model_dump") else (meta or {})
+                    processed_b64 = r.get("processed_b64", "")
+                    view_cat = meta_dict.get("view_category", "exterior") if isinstance(meta_dict, dict) else getattr(meta, "view_category", "exterior")
+                    if branding and processed_b64:
+                        try:
+                            from app.branding import overlay_logo_corner, overlay_logo_license_plate, overlay_logo_wall
+                            logo_b64 = branding.get("logo_b64")
+                            lp_logo = branding.get("license_plate_logo_b64") or logo_b64
+                            if branding.get("logo_corner_enabled") or branding.get("logo_corner"):
+                                if logo_b64:
+                                    pos = branding.get("logo_corner_position", "right")
+                                    processed_b64 = overlay_logo_corner(processed_b64, logo_b64, position=pos, view_category=view_cat)
+                            if branding.get("license_plate_enabled") and lp_logo and view_cat in ("exterior",) and pipeline_version not in ("6", "7", "11"):
+                                processed_b64 = overlay_logo_license_plate(processed_b64, lp_logo)
+                            if branding.get("logo_3d_wall_enabled") and logo_b64 and pipeline_version not in ("6", "7", "11"):
+                                processed_b64 = overlay_logo_wall(processed_b64, logo_b64)
+                        except Exception:
+                            pass
+                    result_item = {
+                        "index": r["index"],
+                        "original_b64": r.get("original_b64", ""),
+                        "processed_b64": processed_b64,
+                        "metadata": meta_dict if isinstance(meta_dict, dict) else (meta.model_dump() if hasattr(meta, "model_dump") else {}),
+                        "error_message": r.get("error_message"),
+                        "model_info": r.get("model_info"),
+                    }
+                    yield sse_format("result", result_item)
 
             yield sse_format("complete", {"status": "completed", "target_studio_description": target_description})
 

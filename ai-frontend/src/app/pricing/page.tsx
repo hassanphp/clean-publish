@@ -28,8 +28,10 @@ export default function PricingPage() {
         cancel_url: `${base}/pricing`,
       }).unwrap();
       if (url) window.location.href = url;
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Checkout failed");
+    } catch (e: unknown) {
+      const err = e as { data?: { detail?: string }; status?: number };
+      const msg = err?.data?.detail ?? (e instanceof Error ? e.message : "Checkout failed");
+      setError(msg);
     }
   };
 

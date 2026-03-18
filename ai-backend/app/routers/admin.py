@@ -99,6 +99,33 @@ def create_feedback(
     return {"id": f.id, "title": f.title, "status": f.status}
 
 
+class AddCreditsRequest(BaseModel):
+    user_id: int | None = Field(None, description="User ID to add credits to")
+    user_email: str | None = Field(None, description="User email (alternative to user_id)")
+    amount: int = Field(..., ge=1, le=100000, description="Credits to add")
+
+
+@router.post("/credits")
+def add_credits(
+    body: AddCreditsRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Add credits to a user. Superadmin only."""
+    _require_superadmin(current_user)
+    user = None
+    if body.user_id:
+        user = db.query(User).filter(User.id == body.user_id).first()
+    if not user and body.user_email:
+        user = db.query(User).filter(User.email == body.user_email).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    user.credits = (user.credits or 0) + body.amount
+    db.commit()
+    db.refresh(user)
+    return {"ok": True, "user_id": user.id, "credits": user.credits}
+
+
 @router.patch("/feedback/{feedback_id}")
 def update_feedback(
     feedback_id: int,

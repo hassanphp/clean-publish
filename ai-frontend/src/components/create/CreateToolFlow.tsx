@@ -88,7 +88,7 @@ export function CreateToolFlow() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [currentOrder, setCurrentOrder] = useState<Order | null>(null);
 
-  const { data: dealers = [] } = useGetDealersQuery(
+  const { data: dealers = [], isLoading: loadingDealers } = useGetDealersQuery(
     { email: me?.email ?? undefined },
     { skip: !isLoggedIn }
   );
@@ -479,7 +479,7 @@ export function CreateToolFlow() {
               t={t}
               theme={themeVal}
               isLoggedIn={isLoggedIn}
-              hasNoDealer={isLoggedIn && dealers.length === 0}
+              hasNoDealer={isLoggedIn && !loadingDealers && dealers.length === 0}
               onSetupDealer={() => setDashboardSection("dealer-settings")}
             />
           );
@@ -519,7 +519,7 @@ export function CreateToolFlow() {
             />
           );
         case "account":
-          return <DashboardAccount user={me ?? null} theme={themeVal} />;
+          return <DashboardAccount user={me ?? null} theme={themeVal} isSuperadmin={me?.is_superadmin ?? false} />;
         default:
           return null;
       }

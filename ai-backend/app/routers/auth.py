@@ -60,6 +60,7 @@ class UserResponse(BaseModel):
     name: str | None
     credits: int = 0
     created_at: str
+    is_superadmin: bool = False
 
 
 def _create_token(user_id: int, email: str) -> tuple[str, int]:
@@ -121,6 +122,11 @@ def login(body: LoginRequest, db: Session = Depends(get_db)):
     return TokenResponse(access_token=token, expires_in=expires_in)
 
 
+def _is_superadmin(email: str | None) -> bool:
+    allowed = [e.strip().lower() for e in os.getenv("SUPERADMIN_EMAILS", "").split(",") if e.strip()]
+    return (email or "").lower() in allowed
+
+
 @router.get("/me", response_model=UserResponse)
 def me(user: User = Depends(get_current_user)):
     """Return current user from JWT."""
@@ -130,4 +136,5 @@ def me(user: User = Depends(get_current_user)):
         name=user.name,
         credits=getattr(user, "credits", 0) or 0,
         created_at=user.created_at.isoformat() if user.created_at else "",
+        is_superadmin=_is_superadmin(user.email),
     )
