@@ -503,8 +503,8 @@ def dynamic_prompt_node(state: GraphState) -> dict:
                     f"The studio must be empty - no people, no person shadows. Remove reflections on hood and body. "
                     f"Add subtle natural floor shadows only from the car. Photorealistic result. "
                     + ("Center the car on the turntable/platform if present, without changing the original camera angle or framing. " if get_flag_bool("center_on_turntable", True) else "")
-                    f"{preserve_rules}"
-                    f"{branding_instruction}"
+                    + f" {preserve_rules}"
+                    + f" {branding_instruction}"
                 )
             else:
                 comps_hint = ", ".join((meta.components or [])[:8]) if meta.components else "wheel, tire, rim, fender, mudguard, wheel arch, body"
