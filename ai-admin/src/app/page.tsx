@@ -458,7 +458,7 @@ export default function AdminHome() {
                         </label>
                         <input
                           type="file"
-                          accept="image/*"
+                          accept=".jpg,.jpeg,.png,.webp,.gif,.avif,image/*"
                           onChange={(e) => setStudio(e.target.files?.[0] || null)}
                           className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-sky-50 file:text-sky-700 file:font-medium file:cursor-pointer hover:file:bg-sky-100"
                         />
@@ -470,7 +470,7 @@ export default function AdminHome() {
                         <input
                           multiple
                           type="file"
-                          accept="image/*"
+                          accept=".jpg,.jpeg,.png,.webp,.gif,.avif,image/*"
                           onChange={(e) => setImages(Array.from(e.target.files || []))}
                           className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-sky-50 file:text-sky-700 file:font-medium file:cursor-pointer hover:file:bg-sky-100"
                         />
@@ -488,11 +488,16 @@ export default function AdminHome() {
                           // @ts-expect-error: webkitdirectory is supported by Chromium-based browsers for folder selection.
                           webkitdirectory="true"
                           directory="true"
-                          accept="image/*"
+                          accept=".jpg,.jpeg,.png,.webp,.gif,.avif,image/*"
                           onChange={(e) => {
                             const files = Array.from(e.target.files || []);
                             const sorted = files
-                              .filter((f) => f.type.startsWith("image/"))
+                              .filter((f) => {
+                                const t = f.type || "";
+                                if (t.startsWith("image/")) return true;
+                                const name = (f.name || "").toLowerCase();
+                                return name.endsWith(".avif") || name.endsWith(".png") || name.endsWith(".jpg") || name.endsWith(".jpeg") || name.endsWith(".webp") || name.endsWith(".gif");
+                              })
                               .sort((a, b) => {
                                 const ap = (a as any).webkitRelativePath || a.name;
                                 const bp = (b as any).webkitRelativePath || b.name;
