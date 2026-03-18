@@ -69,6 +69,36 @@ def _read_file_b64_data_uri(path: str) -> str:
         )
         return f"data:{mime};base64,{b64}"
 
+def _admin_judge_aspect_ratio(*, base: str, token: str, original_b64: str, processed_b64: str, metadata: dict, expected_view_category: str | None) -> dict:
+    judge_url = base.rstrip("/") + "/api/v1/admin/judge"
+    judge_req = {
+        "pipeline_version": "11",
+        "preview": True,
+        "expected_aspect_ratio": "4:3",
+        "use_llm_judge": False,
+        "images": [
+            {
+                "index": 0,
+                "original_b64": original_b64,
+                "processed_b64": processed_b64,
+                "metadata": metadata,
+                "expected_view_category": expected_view_category,
+            }
+        ],
+    }
+    payload = json.dumps(judge_req).encode("utf-8")
+    req = urllib.request.Request(
+        judge_url,
+        data=payload,
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {token}",
+        },
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=60) as r:
+        return json.loads(r.read().decode("utf-8"))
+
 
 def _aspect_ratio_from_processed_b64_data_uri(b64: str) -> tuple[float, int, int] | None:
     try:
@@ -197,22 +227,20 @@ def main():
         print("FAIL: No processed image received")
         sys.exit(1)
 
-    # Verify 4:3 aspect ratio
-    decoded = _aspect_ratio_from_processed_b64_data_uri(processed_b64)
-    if not decoded:
-        print("FAIL: Could not decode processed image to measure aspect ratio (cv2 missing or image unsupported).")
-        sys.exit(1)
-
-    ratio, w, h = decoded
-    target = 4 / 3
-    ok = abs(ratio - target) < 0.02
-    print(f"Processed size: {w}x{h}  ratio={ratio:.4f}  (target 1.3333)")
-    if ok:
-        print("PASS: Interior output is ~4:3 as expected")
+    # Verify 4:3 aspect ratio via backend judge (deterministic-only).
+    judged = _admin_judge_aspect_ratio(
+        base=base,
+        token=tok,
+        original_b64=car_b64,
+        processed_b64=processed_b64,
+        metadata={"view_category": "interior"},
+        expected_view_category="interior",
+    )
+    if judged.get("overall_pass"):
+        print("PASS: Interior output is ~4:3 as expected (backend deterministic judge)")
         sys.exit(0)
-    else:
-        print("WARN: Interior output is not ~4:3")
-        sys.exit(3)
+    print("FAIL: Backend deterministic judge reported aspect ratio failure")
+    sys.exit(3)
 
 
 if __name__ == "__main__":

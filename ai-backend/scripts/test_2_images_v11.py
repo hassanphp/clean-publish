@@ -93,6 +93,33 @@ def _aspect_ratio_from_b64_data_uri(b64: str) -> tuple[float, int, int] | None:
         return None
 
 
+def _admin_judge_aspect_ratio(*, base: str, token: str, images: list[dict]) -> dict:
+    """
+    Call backend MVP judge (deterministic-only) to validate 4:3 aspect ratio.
+    This avoids relying on local cv2/Pillow codec availability on EC2 for smoke tests.
+    """
+    judge_url = base.rstrip("/") + "/api/v1/admin/judge"
+    judge_req = {
+        "pipeline_version": "11",
+        "preview": True,
+        "expected_aspect_ratio": "4:3",
+        "use_llm_judge": False,
+        "images": images,
+    }
+    payload = json.dumps(judge_req).encode("utf-8")
+    req = urllib.request.Request(
+        judge_url,
+        data=payload,
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {token}",
+        },
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=120) as r:
+        return json.loads(r.read().decode("utf-8"))
+
+
 def _sse_stream(req: urllib.request.Request):
     with urllib.request.urlopen(req, timeout=600) as resp:
         ctype = resp.headers.get("content-type", "")
@@ -197,25 +224,37 @@ def main():
         print(f"FAIL: Expected 2 results, got {len(results)}")
         sys.exit(1)
 
-    for i, r in enumerate(results):
+    # Deterministic check via backend judge (avoid local codec dependency).
+    judge_images: list[dict] = []
+    for r in results:
         b64 = (r or {}).get("processed_b64")
-        meta = (r or {}).get("metadata", {})
-        view = meta.get("view_category", "?")
+        meta = (r or {}).get("metadata", {}) or {}
         if not b64:
-            print(f"FAIL: Result {i+1} has no processed_b64")
+            print(f"FAIL: Result has no processed_b64")
             sys.exit(1)
-        decoded = _aspect_ratio_from_b64_data_uri(b64)
-        if not decoded:
-            print(f"FAIL: Image {i+1} ({view}) could not be decoded to measure aspect ratio")
-            sys.exit(1)
+        judge_images.append(
+            {
+                "index": r.get("index"),
+                "original_b64": r.get("original_b64", ""),
+                "processed_b64": b64,
+                "metadata": meta,
+                "expected_view_category": meta.get("view_category") or None,
+            }
+        )
 
-        ratio, w, h = decoded
-        ok = abs(ratio - (4 / 3)) < 0.05
-        print(f"  Image {i+1} ({view}): {w}x{h} ratio={ratio:.3f} 4:3={'OK' if ok else 'WARN'}")
-        if not ok:
-            sys.exit(3)
+    judged = _admin_judge_aspect_ratio(base=base, token=tok, images=judge_images)
+    if not judged.get("overall_pass"):
+        print("FAIL: Backend judge reported aspect ratio failures")
+        for pi in judged.get("per_image", []):
+            idx = (pi.get("index") or 0) + 1
+            ratio = pi.get("aspect_ratio")
+            if ratio is not None:
+                print(f"  Image {idx}: aspect_ratio={float(ratio):.4f}")
+            if pi.get("failed_constraints"):
+                print(f"  Image {idx} failed: {', '.join(pi['failed_constraints'])}")
+        sys.exit(3)
 
-    print("PASS: 2 images processed successfully")
+    print("PASS: 2 images processed successfully (backend judge aspect ratio OK)")
     sys.exit(0)
 
 
