@@ -221,7 +221,7 @@ export default function AdminHome() {
       setBusy(false);
       showToast("error", (e as Error).message);
     }
-  }, [canRun, studio, images, token, pipeline, preview, showToast]);
+  }, [canRun, studio, images, token, pipeline, preview, baselineResults, showToast]);
 
   useEffect(() => {
     if (token && tab === "feedback") {

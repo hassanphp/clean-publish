@@ -231,21 +231,40 @@ def _aspect_ratio_4_3(w: int, h: int) -> float:
 
 def _check_aspect_ratio_4_3(processed_b64: str) -> tuple[bool, float | None]:
     """Deterministic check: output must be ~4:3 (tolerance allows minor resampling)."""
+    raw = _strip_data_uri(processed_b64)
     try:
-        from PIL import Image
         import base64
-        import io
+        import numpy as np  # type: ignore
+        import cv2  # type: ignore
 
-        raw = _strip_data_uri(processed_b64)
         img_bytes = base64.b64decode(raw)
-        with Image.open(io.BytesIO(img_bytes)) as im:
-            w, h = im.size
+        arr = np.frombuffer(img_bytes, dtype=np.uint8)
+        im = cv2.imdecode(arr, cv2.IMREAD_UNCHANGED)
+        if im is None:
+            raise ValueError("cv2.imdecode failed")
+
+        # im is HxW or HxWxC
+        h, w = im.shape[:2]
         ratio = _aspect_ratio_4_3(w, h)
         target = 4.0 / 3.0
         ok = abs(ratio - target) <= 0.03  # tolerance
         return ok, ratio
     except Exception:
-        return False, None
+        # Fallback to PIL if available
+        try:
+            from PIL import Image  # type: ignore
+            import base64
+            import io
+
+            img_bytes = base64.b64decode(raw)
+            with Image.open(io.BytesIO(img_bytes)) as im:
+                w, h = im.size
+            ratio = _aspect_ratio_4_3(w, h)
+            target = 4.0 / 3.0
+            ok = abs(ratio - target) <= 0.03  # tolerance
+            return ok, ratio
+        except Exception:
+            return False, None
 
 
 def _guess_mime_from_pil(pil_format: str | None) -> str:
@@ -269,27 +288,60 @@ def _to_data_url(b64: str, fallback_mime: str = "image/jpeg") -> str:
 def _normalize_b64_to_jpeg_data_url(b64: str) -> str:
     """
     Normalize any incoming base64 image to a supported OpenAI input:
-    - decodes the image with PIL
-    - re-encodes as JPEG
-    - returns data:image/jpeg;base64,...
+    - If possible, decode with OpenCV and re-encode as JPEG.
+    - Otherwise, if b64 is already a supported data URI, return as-is.
+    - Last resort: best-effort wrap as JPEG (may still fail if bytes aren't an image).
     """
+    # If it's already a supported data URI, keep it (avoids breaking when PIL is missing).
+    if b64.startswith("data:image/") and ";base64," in b64:
+        try:
+            mime = b64.split("data:", 1)[1].split(";", 1)[0].strip().lower()
+            if mime in ("image/jpeg", "image/png", "image/gif", "image/webp"):
+                return b64
+        except Exception:
+            pass
+
+    raw = _strip_data_uri(b64)
     try:
         import base64
-        import io
-        from PIL import Image
+        import numpy as np  # type: ignore
+        import cv2  # type: ignore
 
-        raw = _strip_data_uri(b64)
         img_bytes = base64.b64decode(raw)
-        with Image.open(io.BytesIO(img_bytes)) as im:
-            im = im.convert("RGB")
-            out_buf = io.BytesIO()
-            im.save(out_buf, format="JPEG", quality=95)
-            norm_raw = base64.b64encode(out_buf.getvalue()).decode("utf-8")
+        arr = np.frombuffer(img_bytes, dtype=np.uint8)
+        im = cv2.imdecode(arr, cv2.IMREAD_UNCHANGED)
+        if im is None:
+            raise ValueError("cv2.imdecode failed")
+
+        # Ensure 3-channel for consistent JPEG encoding
+        if im.ndim == 2:
+            im = cv2.cvtColor(im, cv2.COLOR_GRAY2BGR)
+        elif im.ndim == 3 and im.shape[2] == 4:
+            im = cv2.cvtColor(im, cv2.COLOR_BGRA2BGR)
+
+        ok, enc = cv2.imencode(".jpg", im, [int(cv2.IMWRITE_JPEG_QUALITY), 95])
+        if not ok or enc is None:
+            raise ValueError("cv2.imencode failed")
+
+        norm_raw = base64.b64encode(enc.tobytes()).decode("utf-8")
         return f"data:image/jpeg;base64,{norm_raw}"
     except Exception:
-        # Best-effort fallback: return original as a JPEG data URL (may still fail if the bytes aren't an image)
-        raw = _strip_data_uri(b64)
-        return f"data:image/jpeg;base64,{raw}"
+        # Fallback to PIL if available
+        try:
+            import base64
+            import io
+            from PIL import Image  # type: ignore
+
+            img_bytes = base64.b64decode(raw)
+            with Image.open(io.BytesIO(img_bytes)) as im:
+                im = im.convert("RGB")
+                out_buf = io.BytesIO()
+                im.save(out_buf, format="JPEG", quality=95)
+                norm_raw = base64.b64encode(out_buf.getvalue()).decode("utf-8")
+            return f"data:image/jpeg;base64,{norm_raw}"
+        except Exception:
+            # Last resort: best-effort wrap (may fail if bytes aren't image data)
+            return f"data:image/jpeg;base64,{raw}"
 
 
 def _extract_first_json_object(text: str) -> dict[str, Any] | None:
@@ -315,10 +367,6 @@ def _llm_judge_pass_fail(
     Simple LLM judge: PASS/FAIL based on visual constraints.
     Runs only when deterministic checks pass.
     """
-    import base64
-    import io
-
-    from PIL import Image
     from openai import OpenAI
 
     api_key = os.getenv("OPENAI_API_KEY", "").strip()

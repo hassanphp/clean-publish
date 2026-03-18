@@ -41,13 +41,51 @@ def _read_file_b64_data_uri(path: str) -> str:
             return f"data:image/jpeg;base64,{b64}"
     except Exception:
         with open(path, "rb") as f:
-            b64 = base64.b64encode(f.read()).decode("ascii")
-            # best-effort guess
-            ext = os.path.splitext(path)[1].lower().lstrip(".") or "jpeg"
-            mime = "image/jpeg" if ext in ("jpg", "jpeg", "jfif") else (
-                "image/png" if ext == "png" else "image/webp"
-            )
-            return f"data:{mime};base64,{b64}"
+            raw_bytes = f.read()
+
+        # Best-effort: try OpenCV decode+re-encode to JPEG
+        try:
+            import numpy as np  # type: ignore
+            import cv2  # type: ignore
+
+            arr = np.frombuffer(raw_bytes, dtype=np.uint8)
+            im = cv2.imdecode(arr, cv2.IMREAD_UNCHANGED)
+            if im is not None:
+                if im.ndim == 2:
+                    im = cv2.cvtColor(im, cv2.COLOR_GRAY2BGR)
+                elif im.ndim == 3 and im.shape[2] == 4:
+                    im = cv2.cvtColor(im, cv2.COLOR_BGRA2BGR)
+                ok, enc = cv2.imencode(".jpg", im, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
+                if ok and enc is not None:
+                    b64 = base64.b64encode(enc.tobytes()).decode("ascii")
+                    return f"data:image/jpeg;base64,{b64}"
+        except Exception:
+            pass
+
+        b64 = base64.b64encode(raw_bytes).decode("ascii")
+        ext = os.path.splitext(path)[1].lower().lstrip(".") or "jpeg"
+        mime = "image/jpeg" if ext in ("jpg", "jpeg", "jfif") else (
+            "image/png" if ext == "png" else "image/webp"
+        )
+        return f"data:{mime};base64,{b64}"
+
+
+def _aspect_ratio_from_processed_b64_data_uri(b64: str) -> tuple[float, int, int] | None:
+    try:
+        import numpy as np  # type: ignore
+        import cv2  # type: ignore
+
+        raw = b64.split(",", 1)[-1]
+        img_bytes = base64.b64decode(raw)
+        arr = np.frombuffer(img_bytes, dtype=np.uint8)
+        im = cv2.imdecode(arr, cv2.IMREAD_UNCHANGED)
+        if im is None:
+            raise ValueError("cv2.imdecode returned None")
+        h, w = im.shape[:2]
+        ratio = w / h if h else 0.0
+        return ratio, w, h
+    except Exception:
+        return None
 
 
 def _sse_stream(req: urllib.request.Request):
@@ -160,26 +198,21 @@ def main():
         sys.exit(1)
 
     # Verify 4:3 aspect ratio
-    try:
-        raw = processed_b64.split(",", 1)[-1]
-        img_bytes = base64.b64decode(raw)
-        from PIL import Image  # type: ignore
-
-        with Image.open(io.BytesIO(img_bytes)) as im:
-            w, h = im.size
-        ratio = w / h if h else 0
-        target = 4 / 3
-        ok = abs(ratio - target) < 0.02
-        print(f"Processed size: {w}x{h}  ratio={ratio:.4f}  (target 1.3333)")
-        if ok:
-            print("PASS: Interior output is ~4:3 as expected")
-            sys.exit(0)
-        else:
-            print("WARN: Interior output is not ~4:3")
-            sys.exit(3)
-    except Exception as e:
-        print("FAIL: Could not decode processed image:", e)
+    decoded = _aspect_ratio_from_processed_b64_data_uri(processed_b64)
+    if not decoded:
+        print("FAIL: Could not decode processed image to measure aspect ratio (cv2 missing or image unsupported).")
         sys.exit(1)
+
+    ratio, w, h = decoded
+    target = 4 / 3
+    ok = abs(ratio - target) < 0.02
+    print(f"Processed size: {w}x{h}  ratio={ratio:.4f}  (target 1.3333)")
+    if ok:
+        print("PASS: Interior output is ~4:3 as expected")
+        sys.exit(0)
+    else:
+        print("WARN: Interior output is not ~4:3")
+        sys.exit(3)
 
 
 if __name__ == "__main__":

@@ -35,10 +35,62 @@ def _read_file_b64_data_uri(path: str) -> str:
             return f"data:image/jpeg;base64,{b64}"
     except Exception:
         with open(path, "rb") as f:
-            b64 = base64.b64encode(f.read()).decode("ascii")
+            raw_bytes = f.read()
+
+        # Best-effort: try OpenCV decode+re-encode to JPEG (more OpenAI-compatible than random mime guesses).
+        try:
+            import numpy as np  # type: ignore
+            import cv2  # type: ignore
+
+            arr = np.frombuffer(raw_bytes, dtype=np.uint8)
+            im = cv2.imdecode(arr, cv2.IMREAD_UNCHANGED)
+            if im is not None:
+                if im.ndim == 2:
+                    im = cv2.cvtColor(im, cv2.COLOR_GRAY2BGR)
+                elif im.ndim == 3 and im.shape[2] == 4:
+                    im = cv2.cvtColor(im, cv2.COLOR_BGRA2BGR)
+                ok, enc = cv2.imencode(".jpg", im, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
+                if ok and enc is not None:
+                    b64 = base64.b64encode(enc.tobytes()).decode("ascii")
+                    return f"data:image/jpeg;base64,{b64}"
+        except Exception:
+            pass
+
+        # Fallback: mime-guess by extension (may still fail for judge inputs).
+        b64 = base64.b64encode(raw_bytes).decode("ascii")
         ext = os.path.splitext(path)[1].lower().lstrip(".") or "jpeg"
         mime = "image/jpeg" if ext in ("jpg", "jpeg", "jfif") else ("image/png" if ext == "png" else "image/webp")
         return f"data:{mime};base64,{b64}"
+
+
+def _aspect_ratio_from_b64_data_uri(b64: str) -> tuple[float, int, int] | None:
+    """Return (ratio, width, height) using cv2, then PIL (if available)."""
+    try:
+        import numpy as np  # type: ignore
+        import cv2  # type: ignore
+
+        raw = b64.split(",", 1)[-1]
+        img_bytes = base64.b64decode(raw)
+        arr = np.frombuffer(img_bytes, dtype=np.uint8)
+        im = cv2.imdecode(arr, cv2.IMREAD_UNCHANGED)
+        if im is None:
+            raise ValueError("cv2.imdecode returned None")
+        h, w = im.shape[:2]
+        ratio = w / h if h else 0.0
+        return ratio, w, h
+    except Exception:
+        pass
+
+    try:
+        raw = b64.split(",", 1)[-1]
+        img_bytes = base64.b64decode(raw)
+        from PIL import Image  # type: ignore
+        with Image.open(io.BytesIO(img_bytes)) as im:
+            w, h = im.size
+        ratio = w / h if h else 0.0
+        return ratio, w, h
+    except Exception:
+        return None
 
 
 def _sse_stream(req: urllib.request.Request):
@@ -152,17 +204,16 @@ def main():
         if not b64:
             print(f"FAIL: Result {i+1} has no processed_b64")
             sys.exit(1)
-        try:
-            raw = b64.split(",", 1)[-1]
-            img_bytes = base64.b64decode(raw)
-            from PIL import Image  # type: ignore
-            with Image.open(io.BytesIO(img_bytes)) as im:
-                w, h = im.size
-            ratio = w / h if h else 0
-            ok = abs(ratio - (4/3)) < 0.05
-            print(f"  Image {i+1} ({view}): {w}x{h} ratio={ratio:.3f} 4:3={'OK' if ok else 'WARN'}")
-        except Exception as e:
-            print(f"  Image {i+1}: decode error {e}")
+        decoded = _aspect_ratio_from_b64_data_uri(b64)
+        if not decoded:
+            print(f"FAIL: Image {i+1} ({view}) could not be decoded to measure aspect ratio")
+            sys.exit(1)
+
+        ratio, w, h = decoded
+        ok = abs(ratio - (4 / 3)) < 0.05
+        print(f"  Image {i+1} ({view}): {w}x{h} ratio={ratio:.3f} 4:3={'OK' if ok else 'WARN'}")
+        if not ok:
+            sys.exit(3)
 
     print("PASS: 2 images processed successfully")
     sys.exit(0)
