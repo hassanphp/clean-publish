@@ -98,8 +98,8 @@ def _crop_to_aspect_ratio_4_3(b64_str: str) -> str:
 
 
 def _resize_output(b64_str: str, max_dim: int | None = None, quality: int | None = None) -> str:
-    """Resize output to cap max dimension and re-encode with target quality. Reduces payload size."""
-    max_dim = max_dim or int(os.getenv("OUTPUT_MAX_DIM", "1024"))
+    """Resize output to cap max dimension and re-encode. Saves cost (OUTPUT_MAX_DIM default 1536)."""
+    max_dim = max_dim or int(os.getenv("OUTPUT_MAX_DIM", "1536"))
     quality = quality or int(os.getenv("OUTPUT_JPEG_QUALITY", "85"))
     try:
         img_bytes = base64.b64decode(b64_str.split(",", 1)[-1] if "," in b64_str else b64_str)
@@ -135,12 +135,14 @@ Return ONLY valid JSON matching this exact schema (no markdown, no extra text):
   "suggested_edit_mode": "product-image" | "inpainting-insert" | "outpainting"
 }
 
-Rules:
-- view_category: "interior" = cabin/dashboard/seats, door panels, center console, trunk/boot interior, door sills - ANYTHING inside the car looking inward. "exterior" = full car from outside, body visible from outside. "detail" = close-up of a single part (wheel, hood badge, door sill badge, etc.) - use "detail" when the frame is tight on one part.
-- CRITICAL: Trunk/boot/cargo interior = interior (NOT exterior). Center console close-up = interior. Door panel = interior. Door sill with badge = detail if tight crop, else interior. Wheel close-up = detail. Dashboard clock close-up = interior.
-- NEVER classify an interior shot (door panel, trunk, console) as exterior. NEVER classify a trunk interior as anything that would show dashboard/steering wheel.
-- components: List ALL visible parts. For wheel/rim: rims, tire, fender, wheel arch, mudguard, body panel. For interior: leather, screens, dashboard, steering wheel, door panel, trunk, center console. For exterior: hood, headlights, bumper, body panels.
-- suggested_edit_mode: "product-image" for exterior/car shots (background swap), "inpainting-insert" for adding elements, "outpainting" for extending
+CRITICAL RULES - MUST FOLLOW:
+- "interior" = The PRIMARY subject is INSIDE the car. Use interior when you see: seats (front or rear), trunk/cargo interior, center console, gear shifter, door panel, dashboard, steering wheel, rear seat, parcel shelf, carpet, cargo area. ANY shot taken from inside looking in = interior.
+- "exterior" = The PRIMARY subject is the FULL car body from OUTSIDE. You must see the car's exterior (hood, doors, bumper, wheels) as the main subject. A small glimpse of car through a window does NOT make it exterior.
+- "detail" = Close-up of ONE exterior part only: wheel, tire, rim, hood badge, door sill badge. NOT interior parts.
+- NEVER use "exterior" if the main subject is: trunk interior, center console, gear shifter, seats, door panel, rear cabin, cargo area. These are ALWAYS interior.
+- If the camera is inside the car (showing cabin, trunk, console) = interior. If the camera is outside showing full car = exterior.
+- components: List ALL visible parts. Interior: trunk, center console, gear shifter, seats, dashboard, door panel, steering wheel. Exterior: hood, bumper, headlights, body panels, wheels.
+- suggested_edit_mode: "product-image" for exterior/detail, "inpainting-insert" for adding elements
 """
 
 
@@ -399,11 +401,26 @@ def _classify_single_image(client: Any, image_b64: str, index: int) -> Automotiv
     return _normalize_metadata(data)
 
 
+# Components/keywords that STRONGLY indicate interior - override misclassification
+_INTERIOR_KEYWORDS = ("trunk", "cargo", "boot", "console", "shifter", "dashboard",
+                     "steering", "door panel", "seat", "parcel", "carpet", "cabin",
+                     "idrive", "infotainment", "climate", "leather", "upholstery")
+
+def _components_suggest_interior(comps: list[str]) -> bool:
+    """True if any component suggests interior (prevents exterior hallucination)."""
+    low = " ".join(c.lower() for c in comps)
+    return any(kw in low for kw in _INTERIOR_KEYWORDS)
+
 def _normalize_metadata(data: dict) -> AutomotiveImageMetadata:
-    """Ensure view_category and suggested_edit_mode match schema (handles 'unknown' etc)."""
+    """Ensure view_category and suggested_edit_mode match schema. Apply sanity overrides."""
     view = (data.get("view_category") or "").lower()
     if view not in ("interior", "exterior", "detail"):
         data["view_category"] = "exterior"
+    comps = data.get("components") or []
+    # Validation: if classifier said exterior but components show interior -> override to interior
+    if view == "exterior" and _components_suggest_interior(comps):
+        data["view_category"] = "interior"
+        logger.info("Metadata override: exterior->interior (components suggest interior: %s)", comps[:5])
     mode = (data.get("suggested_edit_mode") or "").lower().replace(" ", "-")
     if mode not in ("product-image", "inpainting-insert", "outpainting"):
         data["suggested_edit_mode"] = "product-image"
@@ -539,40 +556,39 @@ def dynamic_prompt_node(state: GraphState) -> dict:
             preserve_rules = preserve_rules_v1
 
         if pipeline_version == "11":
-            # V11: OpenAI GPT Image 1.5 - feedback-driven: anti-hallucination, metallic finish, centering, interior 4:3
+            # V11: OpenAI GPT Image 1.5 - anti-hallucination, correct pipeline per view_category
             color_hint = getattr(meta, "dominant_color", None) or ""
             v11_color = f"USED CAR: {color_hint}. Copy EXACT color - same shade, brightness, saturation. Washed clean but SAME color." if (color_hint and color_hint.lower() != "unknown") else "USED CAR: Copy EXACT color from original. Same shade, brightness, saturation. Washed clean but SAME color."
+            comps_hint = ", ".join((meta.components or [])[:6]) if meta.components else ""
             if meta.view_category == "interior":
                 prompt = (
-                    f"Replace the background visible in the image with the studio backdrop from the second reference: {target_short}. "
-                    f"CRITICAL: Do NOT change the subject. Output MUST show the EXACT same scene as input. "
-                    f"If input is trunk/cargo interior - output is trunk interior. If input is door sill, center console, dashboard clock, steering wheel - output shows EXACT same part. "
-                    f"NEVER zoom out. NEVER add steering wheel, dashboard, or exterior car if not in original. NO hallucination. "
-                    f"Preserve EXACT framing, angle, crop - same zoom level. Remove outdoor view through windows. Remove reflections on glossy surfaces. "
-                    f"Keep all interior colors and materials unchanged. Output must be 4:3 aspect ratio. "
+                    f"INPUT TYPE: INTERIOR. The image shows car interior (seats, trunk, console, dashboard, etc). "
+                    f"Replace ONLY the background visible in the image with the studio backdrop from the second reference: {target_short}. "
+                    f"ABSOLUTE RULE: Output MUST show the EXACT same interior scene. Same subject, same framing, same zoom. "
+                    f"If input shows trunk interior - output shows trunk interior ONLY. If input shows center console - output shows center console ONLY. "
+                    f"NEVER output a full exterior car. NEVER zoom out. NEVER add exterior body, bumper, or wheels. "
+                    f"Visible in input: {comps_hint or 'interior'}. Keep ALL of these. Remove outdoor view through windows. Output 4:3. "
                     f"{preserve_rules}"
                 )
             elif meta.view_category == "exterior":
                 prompt = (
-                    f"Replace the background of the first image (the car) with the studio environment from the second reference image: {target_short}. "
-                    f"CRITICAL: {v11_color} Preserve metallic, glossy paint finish - do NOT make flat or matte. "
-                    f"CRITICAL: Center the car on the studio floor/platform. Car must be centered in frame. "
-                    f"CRITICAL: Keep the car EXACTLY as it is - same model, bumper, fog lights, every detail. Same view (rear=rear, front=front), same angle, no flip. "
-                    f"CRITICAL: Preserve headlights, taillights, DRLs exactly - if on, keep on; if off, keep off. "
-                    f"CRITICAL: Preserve wheel design, badges, logos, license plate area. "
-                    f"The studio must be empty - no people, no person shadows. Remove reflections on hood and body. "
-                    f"Add subtle natural floor shadows only from the car. Photorealistic result. "
+                    f"INPUT TYPE: EXTERIOR. The image shows a full car from outside. "
+                    f"Replace the background with the studio from the second reference: {target_short}. "
+                    f"CRITICAL: {v11_color} Preserve metallic, glossy paint. Center the car on the studio floor. "
+                    f"Keep the car EXACTLY as it is - same model, bumper, fog lights, every detail. Same view (rear=rear, front=front), same angle. "
+                    f"Preserve headlights, taillights, DRLs, wheel design, badges, license plate. "
+                    f"Empty studio, no people. Subtle floor shadows. Output 4:3 aspect ratio, car fills frame. "
                     f"{preserve_rules}"
                     f"{branding_instruction}"
                 )
             else:
-                comps_hint = ", ".join((meta.components or [])[:8]) if meta.components else "wheel, tire, rim, fender, mudguard, wheel arch, body"
+                dc = ", ".join((meta.components or [])[:8]) if meta.components else "wheel, tire, rim, fender, mudguard, wheel arch, body"
                 prompt = (
+                    f"INPUT TYPE: DETAIL. The image is a close-up of one part (wheel, badge, etc). "
                     f"Replace ONLY the ground beneath the visible subject with the studio from the second reference: {target_short}. "
-                    f"CRITICAL: Do NOT change the subject. If input is wheel close-up - output is wheel close-up. If input is door sill, door panel, trunk - output shows EXACT same. "
-                    f"NEVER replace with exterior car, dashboard, or steering wheel. NO hallucination. Preserve EXACT framing and zoom. "
-                    f"Keep FULL scene: fender, wheel arch, mudguard, body panel, wheel, tire, rim - everything visible stays. "
-                    f"Visible elements: {comps_hint}. Preserve exact color and brightness. Remove reflections. Minimal floor shadows. "
+                    f"ABSOLUTE RULE: Output MUST show the EXACT same subject. Wheel close-up stays wheel close-up. Door sill stays door sill. "
+                    f"NEVER output full exterior car. NEVER output interior (dashboard, seats). Preserve EXACT framing and zoom. "
+                    f"Visible: {dc}. Keep everything. Remove reflections. Minimal floor shadows. "
                     f"{preserve_rules}"
                 )
         elif pipeline_version in ("6", "7"):
@@ -1526,10 +1542,11 @@ async def vertex_execution_node_async(
                     dominant_color="unknown",
                     suggested_edit_mode="product-image",
                 )
-            # Interior only: crop to 4:3 (user feedback: interior must be 4:3). Exterior: no crop (preserve full studio)
-            if getattr(meta, "view_category", None) == "interior":
+            # Interior + exterior: crop to 4:3 (fill frame, avoid shrunk car with white space)
+            if getattr(meta, "view_category", None) in ("interior", "exterior"):
                 processed_b64 = _crop_to_aspect_ratio_4_3(processed_b64)
-            # V11: no _resize_output (full resolution, no downscale)
+            # Resize output to save cost (OUTPUT_MAX_DIM default 1536)
+            processed_b64 = _resize_output(processed_b64)
             model_info = _get_model_info(p)
             results.append(
                 {

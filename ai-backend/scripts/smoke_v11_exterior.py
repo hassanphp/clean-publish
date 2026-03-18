@@ -160,7 +160,7 @@ def main():
         print("FAIL: No processed image received")
         sys.exit(1)
 
-    # Verify we got a valid image (no 4:3 crop - full studio preserved)
+    # Verify exterior output is ~4:3 (cropped to fill frame)
     try:
         raw = processed_b64.split(",", 1)[-1]
         img_bytes = base64.b64decode(raw)
@@ -168,9 +168,14 @@ def main():
 
         with Image.open(io.BytesIO(img_bytes)) as im:
             w, h = im.size
-        print(f"Processed size: {w}x{h}")
-        print("PASS: Exterior output received (full studio, no crop)")
-        sys.exit(0)
+        ratio = w / h if h else 0
+        ok = abs(ratio - 4 / 3) < 0.05
+        print(f"Processed size: {w}x{h} ratio={ratio:.3f}")
+        if ok:
+            print("PASS: Exterior ~4:3")
+        else:
+            print("WARN: Exterior not ~4:3")
+        sys.exit(0 if ok else 3)
     except Exception as e:
         print("FAIL: Could not decode processed image:", e)
         sys.exit(1)
