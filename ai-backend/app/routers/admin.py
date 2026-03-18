@@ -20,8 +20,16 @@ router = APIRouter(prefix="/api/v1/admin", tags=["admin"])
 
 def _require_superadmin(user: User) -> None:
     allowed = [e.strip().lower() for e in os.getenv("SUPERADMIN_EMAILS", "").split(",") if e.strip()]
-    if not allowed or (user.email or "").lower() not in allowed:
-        raise HTTPException(status_code=403, detail="Forbidden")
+    if not allowed:
+        raise HTTPException(
+            status_code=403,
+            detail="Superadmin access disabled. Set SUPERADMIN_EMAILS on the server (comma-separated emails).",
+        )
+    if (user.email or "").lower() not in allowed:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Access denied. Add {user.email} to SUPERADMIN_EMAILS on the server.",
+        )
 
 
 # --- Feature flags ---

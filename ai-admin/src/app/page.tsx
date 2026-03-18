@@ -83,8 +83,12 @@ export default function AdminHome() {
     try {
       const t = await login(email, password);
       setToken(t);
-      setFlags(await adminGetFlags(t));
-      showToast("success", "Logged in");
+      try {
+        setFlags(await adminGetFlags(t));
+        showToast("success", "Logged in");
+      } catch (flagsErr) {
+        showToast("error", (flagsErr as Error).message);
+      }
     } catch (e) {
       showToast("error", (e as Error).message);
     }

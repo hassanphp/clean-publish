@@ -128,9 +128,15 @@ export async function login(email: string, password: string): Promise<string> {
 
 // --- Admin endpoints ---
 
+async function parseError(res: Response, prefix: string): Promise<never> {
+  const data = await res.json().catch(() => ({}))
+  const detail = (data as { detail?: string }).detail
+  throw new Error(detail || `${prefix}: ${res.status}`)
+}
+
 export async function adminGetFlags(token: string): Promise<Record<string, string | null>> {
   const res = await fetch(api("/admin/feature-flags"), { headers: { Authorization: `Bearer ${token}` } })
-  if (!res.ok) throw new Error(`adminGetFlags: ${res.status}`)
+  if (!res.ok) await parseError(res, "adminGetFlags")
   return res.json()
 }
 
