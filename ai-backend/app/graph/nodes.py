@@ -23,7 +23,6 @@ from pydantic import ValidationError
 from app.graph.state import GraphState, ImageItem, VertexPayload
 from app.schemas import AutomotiveImageMetadata
 from app.utils import sanitize_error
-from app.feature_flags import get_flag_bool
 
 # Replicate model for image editing (no Vertex quota; pay-per-use)
 REPLICATE_EDIT_MODEL = os.getenv("REPLICATE_EDIT_MODEL", "reve/edit-fast")
@@ -71,7 +70,7 @@ def _resize_for_flux_pro(b64_str: str, max_pixels: int = 2_000_000, max_bytes: i
 
 
 def _crop_to_aspect_ratio_4_3(b64_str: str) -> str:
-    """Pad (letterbox) image to 4:3 aspect ratio without cropping. Returns base64 JPEG."""
+    """Crop image center to 4:3 aspect ratio. Returns base64 JPEG. Match old bismillah."""
     try:
         raw = b64_str.split(",", 1)[-1] if "," in b64_str else b64_str
         img_bytes = base64.b64decode(raw)
@@ -84,39 +83,15 @@ def _crop_to_aspect_ratio_4_3(b64_str: str) -> str:
         current_ratio = w / h
         if abs(current_ratio - target_ratio) < 0.01:
             return b64_str
-        # If the image is too wide, pad vertically. If too tall, pad horizontally.
-        # This preserves the full studio/car scene (no cut-offs).
         if current_ratio > target_ratio:
-            # Too wide (w/h > 4/3) => increase height to match 4:3.
-            new_h = int(round(w / target_ratio))
-            pad_total = max(0, new_h - h)
-            pad_top = pad_total // 2
-            pad_bottom = pad_total - pad_top
-            padded = cv2.copyMakeBorder(
-                img,
-                pad_top,
-                pad_bottom,
-                0,
-                0,
-                borderType=cv2.BORDER_CONSTANT,
-                value=(255, 255, 255),
-            )
+            new_w = int(h * target_ratio)
+            left = (w - new_w) // 2
+            cropped = img[:, left : left + new_w]
         else:
-            # Too tall (w/h < 4/3) => increase width to match 4:3.
-            new_w = int(round(h * target_ratio))
-            pad_total = max(0, new_w - w)
-            pad_left = pad_total // 2
-            pad_right = pad_total - pad_left
-            padded = cv2.copyMakeBorder(
-                img,
-                0,
-                0,
-                pad_left,
-                pad_right,
-                borderType=cv2.BORDER_CONSTANT,
-                value=(255, 255, 255),
-            )
-        _, buf = cv2.imencode(".jpg", padded)
+            new_h = int(w / target_ratio)
+            top = (h - new_h) // 2
+            cropped = img[top : top + new_h, :]
+        _, buf = cv2.imencode(".jpg", cropped)
         return base64.b64encode(buf.tobytes()).decode()
     except Exception:
         return b64_str
@@ -1529,11 +1504,10 @@ async def vertex_execution_node_async(
                     dominant_color="unknown",
                     suggested_edit_mode="product-image",
                 )
-            # Exterior + interior: enforce 4:3 aspect ratio (feature flag)
-            if get_flag_bool("enforce_4_3", True) and getattr(meta, "view_category", None) in ("exterior", "interior", "detail"):
+            # Exterior only: crop to 4:3 (match old bismillah - interior/detail left as-is)
+            if getattr(meta, "view_category", None) == "exterior":
                 processed_b64 = _crop_to_aspect_ratio_4_3(processed_b64)
-            # Resize output to cap size (OUTPUT_MAX_DIM, OUTPUT_JPEG_QUALITY)
-            processed_b64 = _resize_output(processed_b64)
+            # V11: no _resize_output (match old bismillah - full resolution, no downscale)
             model_info = _get_model_info(p)
             results.append(
                 {
