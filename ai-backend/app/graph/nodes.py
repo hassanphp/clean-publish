@@ -22,6 +22,7 @@ from pydantic import ValidationError
 from app.graph.state import GraphState, ImageItem, VertexPayload
 from app.schemas import AutomotiveImageMetadata
 from app.utils import sanitize_error
+from app.feature_flags import get_flag_bool
 
 # Replicate model for image editing (no Vertex quota; pay-per-use)
 REPLICATE_EDIT_MODEL = os.getenv("REPLICATE_EDIT_MODEL", "reve/edit-fast")
@@ -109,8 +110,10 @@ Return ONLY valid JSON matching this exact schema (no markdown, no extra text):
 }
 
 Rules:
-- view_category: "interior" = cabin/dashboard/seats, "exterior" = full car shot, "detail" = close-up of part (wheel, hood, etc.)
-- components: List ALL visible parts. For wheel/rim shots include: rims, tire, fender, wheel arch, mudguard, body panel if visible. For interior: leather, screens, dashboard, steering wheel, headlights. For exterior: hood, headlights, bumper, body panels.
+- view_category: "interior" = cabin/dashboard/seats, door panels, center console, trunk/boot interior, door sills - ANYTHING inside the car looking inward. "exterior" = full car from outside, body visible from outside. "detail" = close-up of a single part (wheel, hood badge, door sill badge, etc.) - use "detail" when the frame is tight on one part.
+- CRITICAL: Door panel = interior. Trunk/boot interior = interior. Center console = interior. Door sill with badge = detail if tight crop, else interior. Wheel close-up = detail.
+- NEVER classify an interior shot (door panel, trunk, console) as exterior. NEVER classify a trunk interior as anything that would show dashboard/steering wheel.
+- components: List ALL visible parts. For wheel/rim: rims, tire, fender, wheel arch, mudguard, body panel. For interior: leather, screens, dashboard, steering wheel, door panel, trunk, center console. For exterior: hood, headlights, bumper, body panels.
 - suggested_edit_mode: "product-image" for exterior/car shots (background swap), "inpainting-insert" for adding elements, "outpainting" for extending
 """
 
@@ -480,12 +483,12 @@ def dynamic_prompt_node(state: GraphState) -> dict:
             v11_color = f"USED CAR: {color_hint}. Copy EXACT color - same shade, brightness, saturation. Washed clean but SAME color." if (color_hint and color_hint.lower() != "unknown") else "USED CAR: Copy EXACT color from original. Same shade, brightness, saturation. Washed clean but SAME color."
             if meta.view_category == "interior":
                 prompt = (
-                    f"Replace everything visible through the windshield and all car windows with the studio backdrop from the second reference image: {target_short}. "
-                    f"Remove outdoor view, garage, vehicles, sky. Remove reflections on glossy interior. "
-                    f"Keep the car interior unchanged - dashboard, seats, steering wheel, all colors and materials. "
+                    f"Replace the background visible in this interior shot with the studio backdrop from the second reference image: {target_short}. "
+                    f"For windshield/window views: replace outdoor view, garage, vehicles, sky. For trunk/boot interior: replace only the background behind the trunk. For door panel/center console: replace only what is visible through windows or behind the subject. "
+                    f"Remove reflections on glossy interior. Keep the car interior unchanged - dashboard, seats, steering wheel, door panels, trunk, center console, all colors and materials. "
                     f"CRITICAL: Preserve the EXACT camera angle, framing, and crop. Do NOT zoom out or show more of the cabin/windows than the original. "
                     f"CRITICAL: Output must stay 4:3 (do not change aspect ratio). "
-                    f"CRITICAL: Do NOT hallucinate any new interior parts (extra windows, steering wheel parts, screens, trims). "
+                    f"CRITICAL: Do NOT hallucinate any new interior parts (extra windows, steering wheel parts, screens, trims). Do NOT replace a trunk shot with dashboard/steering wheel. Do NOT replace a door panel with a different interior view. "
                     f"The studio must look photographically realistic. "
                     f"{preserve_rules}"
                 )
@@ -493,22 +496,24 @@ def dynamic_prompt_node(state: GraphState) -> dict:
                 prompt = (
                     f"Replace the background of the first image (the car) with the studio environment from the second reference image: {target_short}. "
                     f"CRITICAL: {v11_color} No vibrant/glossy/new-car look. Minimal lighting change - like original with background swapped. "
+                    f"CRITICAL: Preserve EXACT metallic/glossy paint finish - if original has sharp reflections and highlights, keep them. Do NOT flatten to matte. "
                     f"CRITICAL: Keep the car EXACTLY as it is - same model, bumper, fog lights, every detail. Same view (rear=rear, front=front), same angle, no flip. "
                     f"CRITICAL: Preserve headlights, taillights, DRLs exactly - if on, keep on; if off, keep off. "
                     f"CRITICAL: Preserve wheel design, badges, logos, license plate area. "
                     f"The studio must be empty - no people, no person shadows. Remove reflections on hood and body. "
                     f"Add subtle natural floor shadows only from the car. Photorealistic result. "
-                    f"Center the car on the turntable/platform if present, without changing the original camera angle or framing. "
+                    + ("Center the car on the turntable/platform if present, without changing the original camera angle or framing. " if get_flag_bool("center_on_turntable", True) else "")
                     f"{preserve_rules}"
                     f"{branding_instruction}"
                 )
             else:
                 comps_hint = ", ".join((meta.components or [])[:8]) if meta.components else "wheel, tire, rim, fender, mudguard, wheel arch, body"
                 prompt = (
-                    f"Replace ONLY the ground beneath the tire with the studio from the second reference image: {target_short}. "
+                    f"Replace ONLY the background/ground visible in this detail shot with the studio from the second reference image: {target_short}. "
+                    f"For wheel shots: replace ONLY the ground beneath the tire. For interior details (door sill, center console, trunk): replace ONLY the background behind the subject. Do NOT replace the subject with a different scene. "
                     f"CRITICAL: Do NOT isolate or cut out the wheel. Keep the FULL scene: fender, wheel arch, mudguard, body panel, wheel, tire, rim. "
-                    f"CRITICAL: Preserve EXACT camera angle, framing, and crop. Do NOT zoom out, widen the view, or outpaint missing body parts. "
-                    f"CRITICAL: Preserve exact color and brightness. "
+                    f"CRITICAL: Preserve EXACT camera angle, framing, and crop. Do NOT zoom out, widen the view, or outpaint missing body parts. Do NOT add steering wheel, dashboard, or cabin if not in original. "
+                    f"CRITICAL: Preserve exact color and brightness. Output must stay 4:3. "
                     f"Visible elements: {comps_hint}. Preserve all original colors. Remove reflections. Minimal floor shadows. "
                     f"{preserve_rules}"
                 )
@@ -705,7 +710,7 @@ def dynamic_prompt_node(state: GraphState) -> dict:
         if dealer_logo_b64 and meta.view_category == "exterior":
             pl["dealer_logo_b64"] = dealer_logo_b64
         if pipeline_version == "11" and meta.view_category == "exterior":
-            pl["negative_prompt"] = "vibrant, glossy, new car, oversaturated, color shift, studio lighting, bright highlights, polished, dramatic shadows, AI-generated, 3D render, over-processed"
+            pl["negative_prompt"] = "vibrant, glossy, new car, oversaturated, color shift, matte, flat, dull paint, studio lighting, bright highlights, polished, dramatic shadows, AI-generated, 3D render, over-processed"
         if pipeline_version == "10" and meta.view_category == "exterior":
             pl["negative_prompt"] = "vibrant, glossy, new car, oversaturated, color shift, studio lighting, bright highlights, polished, dramatic shadows, artificial reflections, AI-generated, 3D render, over-processed"
         payloads.append(pl)
@@ -1449,8 +1454,8 @@ async def vertex_execution_node_async(
                     dominant_color="unknown",
                     suggested_edit_mode="product-image",
                 )
-            # Exterior + interior: enforce 4:3 aspect ratio
-            if getattr(meta, "view_category", None) in ("exterior", "interior"):
+            # Exterior + interior: enforce 4:3 aspect ratio (feature flag)
+            if get_flag_bool("enforce_4_3", True) and getattr(meta, "view_category", None) in ("exterior", "interior", "detail"):
                 processed_b64 = _crop_to_aspect_ratio_4_3(processed_b64)
             model_info = _get_model_info(p)
             results.append(
