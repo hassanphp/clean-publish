@@ -30,6 +30,7 @@ import {
   useCreateProjectMutation,
   useUpdateProjectMutation,
   useDeleteProjectMutation,
+  useDeleteProjectsBulkMutation,
   useUpsertProjectImagesMutation,
 } from "@/lib/store/apiSlice";
 import { useGetDealersQuery } from "@/store/api/dealerApi";
@@ -78,6 +79,7 @@ export function CreateToolFlow() {
   const [createProject, { isLoading: isCreatingProject }] = useCreateProjectMutation();
   const [updateProject] = useUpdateProjectMutation();
   const [deleteProject] = useDeleteProjectMutation();
+  const [deleteProjectsBulk] = useDeleteProjectsBulkMutation();
   const [upsertProjectImages] = useUpsertProjectImagesMutation();
 
   const [view, setView] = useState<ViewState>("dashboard");
@@ -232,20 +234,29 @@ export function CreateToolFlow() {
       try {
         await deleteProject(order.projectId).unwrap();
       } catch (err) {
-        const anyErr = err as any;
+        const anyErr = err as { status?: number; originalStatus?: number };
         const status = anyErr?.status ?? anyErr?.originalStatus;
-        // During bulk delete, some deletes can race with state refresh; treat "not found" as already deleted.
         if (status === 404) {
-          // Continue to remove from local state.
+          // Already deleted
         } else {
-          const msg = err instanceof Error ? err.message : "Failed to delete project";
-          setError(msg);
+          setError(err instanceof Error ? err.message : "Failed to delete project");
           return;
         }
       }
     }
     setOrders((prev) => prev.filter((o) => o.id !== orderId));
     if (currentOrder?.id === orderId) setCurrentOrder(null);
+  };
+
+  const handleDeleteAll = async (ids: number[]) => {
+    if (!isLoggedIn || ids.length === 0) return;
+    try {
+      await deleteProjectsBulk({ ids }).unwrap();
+      setOrders([]);
+      setCurrentOrder(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete projects");
+    }
   };
 
   const handleRenameOrder = async (orderId: string, newTitle: string) => {
@@ -479,6 +490,7 @@ export function CreateToolFlow() {
               loadingProjects={isLoggedIn && loadingProjects}
               onOrderSelect={handleOrderSelect}
               onDeleteOrder={handleDeleteOrder}
+              onDeleteAll={handleDeleteAll}
               onRenameOrder={handleRenameOrder}
               onTaskSelect={handleTaskSelect}
               t={t}

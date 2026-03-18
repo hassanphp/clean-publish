@@ -100,6 +100,14 @@ export const apiSlice = createApi({
       }),
       invalidatesTags: ["ProjectList"],
     }),
+    deleteProjectsBulk: builder.mutation<{ deleted: number }, { ids: number[] }>({
+      query: ({ ids }) => ({
+        url: "/api/v1/projects/bulk-delete",
+        method: "POST",
+        body: { ids },
+      }),
+      invalidatesTags: ["ProjectList"],
+    }),
     getProjectImages: builder.query<JobImageResponse[], number>({
       query: (projectId) => `/api/v1/projects/${projectId}/images`,
       providesTags: (_, __, id) => [{ type: "Project", id }],
@@ -155,6 +163,7 @@ export const {
   useGetProjectQuery,
   useUpdateProjectMutation,
   useDeleteProjectMutation,
+  useDeleteProjectsBulkMutation,
   useGetProjectImagesQuery,
   useUpsertProjectImagesMutation,
   useLazyGetUploadUrlQuery,

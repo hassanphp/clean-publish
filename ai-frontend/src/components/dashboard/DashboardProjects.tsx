@@ -22,6 +22,7 @@ interface DashboardProjectsProps {
   loadingProjects?: boolean;
   onOrderSelect?: (order: Order) => void;
   onDeleteOrder?: (orderId: string) => void;
+  onDeleteAll?: (ids: number[]) => Promise<void>;
   onRenameOrder?: (orderId: string, newTitle: string) => Promise<void>;
   onTaskSelect: (task: TaskType) => void;
   t: Record<string, string>;
@@ -38,6 +39,7 @@ export function DashboardProjects({
   loadingProjects = false,
   onOrderSelect,
   onDeleteOrder,
+  onDeleteAll,
   onRenameOrder,
   onTaskSelect,
   t,
@@ -82,15 +84,17 @@ export function DashboardProjects({
   const cancelEdit = () => setEditingId(null);
 
   const confirmDelete = async () => {
-    if (!onDeleteOrder || !deleteModal) return;
+    if (!deleteModal) return;
     setDeleting(true);
     try {
       if (deleteModal.mode === "single") {
-        await Promise.resolve(onDeleteOrder(deleteModal.orderId));
+        if (onDeleteOrder) await onDeleteOrder(deleteModal.orderId);
       } else {
-        // Bulk delete: delete everything currently loaded for this user.
-        for (const o of orders) {
-          await Promise.resolve(onDeleteOrder(o.id));
+        const ids = orders.map((o) => o.projectId).filter((id): id is number => typeof id === "number");
+        if (onDeleteAll && ids.length > 0) {
+          await onDeleteAll(ids);
+        } else if (onDeleteOrder) {
+          for (const o of orders) await onDeleteOrder(o.id);
         }
       }
       setDeleteModal(null);

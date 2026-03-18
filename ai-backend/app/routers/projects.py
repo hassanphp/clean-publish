@@ -106,6 +106,28 @@ class JobImagesUpsert(BaseModel):
     images: list[JobImageCreate]
 
 
+class BulkDeleteRequest(BaseModel):
+    ids: list[int] = Field(default_factory=list, description="Project IDs to delete. Empty = delete all for user.")
+
+
+@router.post("/bulk-delete")
+def bulk_delete_projects(
+    body: BulkDeleteRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Delete multiple projects for the current user. Empty ids = delete all."""
+    q = db.query(Project).filter(Project.user_id == user.id)
+    if body.ids:
+        q = q.filter(Project.id.in_(body.ids))
+    projects = q.all()
+    for p in projects:
+        db.query(JobImage).filter(JobImage.project_id == p.id).delete()
+        db.delete(p)
+    db.commit()
+    return {"deleted": len(projects)}
+
+
 @router.get("", response_model=list[ProjectResponse])
 def list_projects(
     user: User = Depends(get_current_user),
