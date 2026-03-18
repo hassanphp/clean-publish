@@ -643,6 +643,50 @@ export default function AdminHome() {
                           </div>
                           <div>
                             <p className="text-xs font-medium text-slate-500 mb-2">Processed</p>
+                            {(() => {
+                              const mvpPi = judgeResult?.per_image?.find((pi) => pi.index === r.index) ?? null;
+                              const fullPi = fullJudgeResult?.per_image?.find((pi) => pi.index === r.index) ?? null;
+                              const activePi = fullPi ?? mvpPi;
+                              if (!activePi) return null;
+
+                              const isFull = !!fullPi;
+                              const badgeClass = activePi.verdict
+                                ? "bg-emerald-100 text-emerald-700 border-emerald-200"
+                                : "bg-red-100 text-red-700 border-red-200";
+                              const boxClass = activePi.verdict
+                                ? "bg-emerald-50 border-emerald-200"
+                                : "bg-red-50 border-red-200";
+
+                              return (
+                                <div className={`mb-2 p-3 rounded-lg border ${boxClass}`}>
+                                  <div className="flex items-center justify-between gap-3 mb-1">
+                                    <p className="text-xs font-semibold text-slate-900">{isFull ? "Full" : "MVP"} Judge</p>
+                                    <span className={`shrink-0 px-2 py-0.5 rounded-full text-[11px] font-bold border ${badgeClass}`}>
+                                      {activePi.verdict ? "PASS" : "FAIL"}
+                                    </span>
+                                  </div>
+                                  {activePi.aspect_ratio !== null && (
+                                    <p className="text-[11px] text-slate-600">Aspect: {activePi.aspect_ratio.toFixed(3)}</p>
+                                  )}
+                                  {activePi.failed_constraints.length > 0 && (
+                                    <p className="text-[11px] text-red-600 mt-1">
+                                      Failed: {activePi.failed_constraints.join(", ")}
+                                    </p>
+                                  )}
+                                  {activePi.llm_reason && <p className="text-[11px] text-slate-700 mt-1">{activePi.llm_reason}</p>}
+                                  {fullPi?.likely_node_or_prompt_cause && (
+                                    <p className="text-[11px] text-slate-700 mt-1">
+                                      Likely cause: {fullPi.likely_node_or_prompt_cause}
+                                    </p>
+                                  )}
+                                  {fullPi?.recommended_changes.length ? (
+                                    <p className="text-[11px] text-slate-600 mt-1">
+                                      Recommended: {fullPi.recommended_changes.join(" | ")}
+                                    </p>
+                                  ) : null}
+                                </div>
+                              );
+                            })()}
                             {r.processed_b64 && (
                               <img
                                 src={r.processed_b64}

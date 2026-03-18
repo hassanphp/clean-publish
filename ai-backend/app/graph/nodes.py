@@ -14,8 +14,9 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
-from google import genai
-from google.genai import types
+# IMPORTANT:
+# Keep Google/Vertex imports lazy so V11 can run OpenAI-only without requiring
+# the google-genai package at module import time.
 from tenacity import retry, stop_after_attempt, wait_exponential
 from pydantic import ValidationError
 
@@ -70,9 +71,10 @@ def _resize_for_flux_pro(b64_str: str, max_pixels: int = 2_000_000, max_bytes: i
 
 
 def _crop_to_aspect_ratio_4_3(b64_str: str) -> str:
-    """Crop image center to 4:3 aspect ratio. Returns base64 JPEG."""
+    """Pad (letterbox) image to 4:3 aspect ratio without cropping. Returns base64 JPEG."""
     try:
-        img_bytes = base64.b64decode(b64_str)
+        raw = b64_str.split(",", 1)[-1] if "," in b64_str else b64_str
+        img_bytes = base64.b64decode(raw)
         nparr = np.frombuffer(img_bytes, np.uint8)
         img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
         if img is None:
@@ -82,15 +84,39 @@ def _crop_to_aspect_ratio_4_3(b64_str: str) -> str:
         current_ratio = w / h
         if abs(current_ratio - target_ratio) < 0.01:
             return b64_str
+        # If the image is too wide, pad vertically. If too tall, pad horizontally.
+        # This preserves the full studio/car scene (no cut-offs).
         if current_ratio > target_ratio:
-            new_w = int(h * target_ratio)
-            left = (w - new_w) // 2
-            cropped = img[:, left : left + new_w]
+            # Too wide (w/h > 4/3) => increase height to match 4:3.
+            new_h = int(round(w / target_ratio))
+            pad_total = max(0, new_h - h)
+            pad_top = pad_total // 2
+            pad_bottom = pad_total - pad_top
+            padded = cv2.copyMakeBorder(
+                img,
+                pad_top,
+                pad_bottom,
+                0,
+                0,
+                borderType=cv2.BORDER_CONSTANT,
+                value=(255, 255, 255),
+            )
         else:
-            new_h = int(w / target_ratio)
-            top = (h - new_h) // 2
-            cropped = img[top : top + new_h, :]
-        _, buf = cv2.imencode(".jpg", cropped)
+            # Too tall (w/h < 4/3) => increase width to match 4:3.
+            new_w = int(round(h * target_ratio))
+            pad_total = max(0, new_w - w)
+            pad_left = pad_total // 2
+            pad_right = pad_total - pad_left
+            padded = cv2.copyMakeBorder(
+                img,
+                0,
+                0,
+                pad_left,
+                pad_right,
+                borderType=cv2.BORDER_CONSTANT,
+                value=(255, 255, 255),
+            )
+        _, buf = cv2.imencode(".jpg", padded)
         return base64.b64encode(buf.tobytes()).decode()
     except Exception:
         return b64_str
@@ -143,8 +169,9 @@ Rules:
 """
 
 
-def _get_genai_client() -> genai.Client:
+def _get_genai_client() -> Any:
     """Create Gen AI client. Prefer Vertex; use Google AI Studio only when GEMINI_PROVIDER=google_ai."""
+    from google import genai
     provider = os.getenv("GEMINI_PROVIDER", "vertex").lower()
     api_key = os.getenv("GOOGLE_AI_API_KEY", "").strip()
     if provider == "google_ai" and api_key:
@@ -213,6 +240,10 @@ def _get_image_b64_for_classifier(img: dict) -> str:
     return base64.b64encode(data).decode("ascii")
 
 
+@retry(
+    stop=stop_after_attempt(int(os.getenv("OPENAI_METADATA_MAX_ATTEMPTS", "5"))),
+    wait=wait_exponential(multiplier=1, min=2, max=int(os.getenv("OPENAI_METADATA_BACKOFF_MAX", "45"))),
+)
 def _classify_image_url_openai(image_url: str, index: int) -> AutomotiveImageMetadata:
     """Classify one image with OpenAI using URL directly (no fetch)."""
     from openai import OpenAI
@@ -262,7 +293,10 @@ def _classify_image_url_openai(image_url: str, index: int) -> AutomotiveImageMet
     return _normalize_metadata(data)
 
 
-@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
+@retry(
+    stop=stop_after_attempt(int(os.getenv("OPENAI_METADATA_MAX_ATTEMPTS", "5"))),
+    wait=wait_exponential(multiplier=1, min=2, max=int(os.getenv("OPENAI_METADATA_BACKOFF_MAX", "45"))),
+)
 def _classify_single_image_openai(image_b64: str, index: int) -> AutomotiveImageMetadata:
     """Classify one image with OpenAI GPT-4o mini Vision."""
     from openai import OpenAI
@@ -322,8 +356,9 @@ def _classify_single_image_openai(image_b64: str, index: int) -> AutomotiveImage
     return _normalize_metadata(data)
 
 
-def _get_vertex_client() -> genai.Client:
+def _get_vertex_client() -> Any:
     """Create Vertex AI client for Imagen. edit_image requires Vertex, not Google AI Studio."""
+    from google import genai
     project_id = os.getenv("GOOGLE_CLOUD_PROJECT_ID", "")
     location = os.getenv("VERTEX_AI_LOCATION", "us-central1")
     if not project_id:
@@ -334,8 +369,9 @@ def _get_vertex_client() -> genai.Client:
 
 
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
-def _classify_single_image(client: genai.Client, image_b64: str, index: int) -> AutomotiveImageMetadata:
+def _classify_single_image(client: Any, image_b64: str, index: int) -> AutomotiveImageMetadata:
     """Classify one image with Gemini Vision."""
+    from google.genai import types
     # Strip data URL prefix if present
     if "," in image_b64:
         image_b64 = image_b64.split(",", 1)[1]
@@ -521,12 +557,13 @@ def dynamic_prompt_node(state: GraphState) -> dict:
                 prompt = (
                     f"Replace the background of the first image (the car) with the studio environment from the second reference image: {target_short}. "
                     f"CRITICAL: {v11_color} No vibrant/glossy/new-car look. Minimal lighting change - like original with background swapped. "
-                    f"CRITICAL: Preserve metallic/glossy paint finish (real specular highlights), but remove unwanted environment reflections so lighting matches the new studio. Do NOT flatten to matte. "
+                    f"CRITICAL: Preserve metallic/glossy paint finish with realistic specular highlights from the STUDIO ONLY (soft studio-lit), not from the original showroom environment. Do NOT flatten to matte. "
                     f"CRITICAL: Keep the car EXACTLY as it is - same model, bumper, fog lights, every detail. Same view (rear=rear, front=front), same angle, no flip. "
                     f"CRITICAL: Preserve headlights, taillights, DRLs exactly - if on, keep on; if off, keep off. "
                     f"CRITICAL: Preserve wheel design, badges, logos, license plate area. "
                     f"The studio must be empty - no people, no person shadows. Remove reflections on hood and body from the original environment; keep paint highlights but match studio lighting. "
                     f"Add subtle natural floor shadows only from the car. Do NOT add exaggerated glow, halos, or artificial circular floor rings - keep floor natural and subtle. Photorealistic result. "
+                    f"CRITICAL: Remove ALL visible reflections of the original showroom (ceiling grid, windows, plants, wall lights, floor patterns) from hood/body/glass. Only studio-consistent highlights/reflections are allowed; no mirrored original environment patterns. "
                     + ("Center the car on the turntable/platform if present, without changing the original camera angle or framing. " if get_flag_bool("center_on_turntable", True) else "")
                     + f" {preserve_rules}"
                     + f" {branding_instruction}"
@@ -984,7 +1021,10 @@ def _edit_image_fal_flux(payload: VertexPayload, studio_b64: str) -> tuple[int, 
 OPENAI_GPT_IMAGE_MODEL = os.getenv("OPENAI_GPT_IMAGE_MODEL", "gpt-image-1.5")
 
 
-@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=15))
+@retry(
+    stop=stop_after_attempt(int(os.getenv("OPENAI_IMAGE_EDIT_MAX_ATTEMPTS", "5"))),
+    wait=wait_exponential(multiplier=1, min=2, max=int(os.getenv("OPENAI_IMAGE_EDIT_BACKOFF_MAX", "60"))),
+)
 def _edit_image_openai_gpt(payload: VertexPayload, studio_b64: str) -> tuple[int, str]:
     """
     Edit image via OpenAI GPT Image 1.5 with multi-image reference.
@@ -1207,6 +1247,7 @@ def _edit_image_replicate(payload: VertexPayload) -> tuple[int, str]:
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=15))
 def _edit_image_vertex(payload: VertexPayload) -> tuple[int, str]:
     """Sync Vertex Imagen edit via Google Gen AI SDK (imagen-3.0-capability-001)."""
+    from google.genai import types
     client = _get_vertex_client()
     # edit_image API requires imagen-3.0-capability-001; generate-002 causes "No uri or raw bytes" error
     model_id = os.getenv("VERTEX_IMAGEN_MODEL", "imagen-3.0-capability-001")
@@ -1329,7 +1370,12 @@ async def vertex_execution_node_async(
     img_by_idx = {img["index"]: img for img in images}
     studio_b64 = state.get("studio_reference_b64")
     pipeline_version = state.get("pipeline_version", "1")
-    semaphore = asyncio.Semaphore(5)
+    # Concurrency control:
+    # - V11 uses OpenAI; make concurrency configurable so you can match your OpenAI rate limits.
+    # - Other pipelines keep the previous default.
+    default_max_concurrency = int(os.getenv("IMAGE_EDIT_MAX_CONCURRENCY", "5"))
+    openai_max_concurrency = int(os.getenv("OPENAI_IMAGE_EDIT_CONCURRENCY", str(default_max_concurrency)))
+    semaphore = asyncio.Semaphore(openai_max_concurrency if pipeline_version == "11" else default_max_concurrency)
     results: list[dict] = []
     logs: list[str] = []
     loop = asyncio.get_event_loop()

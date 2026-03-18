@@ -205,6 +205,27 @@ def list_assets(dealer_id: int, db: Session = Depends(get_db)):
     ]
 
 
+@router.delete("/{dealer_id}/assets/{asset_id}")
+def delete_asset(
+    dealer_id: int,
+    asset_id: int,
+    db: Session = Depends(get_db),
+):
+    """Delete a dealer asset (logo, studio, license_plate)."""
+    dealer = db.query(Dealer).filter(Dealer.id == dealer_id).first()
+    if not dealer:
+        raise HTTPException(status_code=404, detail="Dealer not found")
+    asset = db.query(DealerAsset).filter(
+        DealerAsset.id == asset_id,
+        DealerAsset.dealer_id == dealer_id,
+    ).first()
+    if not asset:
+        raise HTTPException(status_code=404, detail="Asset not found")
+    db.delete(asset)
+    db.commit()
+    return {"deleted": True, "asset_id": asset_id}
+
+
 @router.get("/{dealer_id}/assets/studio")
 def get_studio_asset(dealer_id: int, db: Session = Depends(get_db)):
     """Get dealer's studio asset as full base64 data URI for use in processing."""

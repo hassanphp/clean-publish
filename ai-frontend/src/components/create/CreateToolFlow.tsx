@@ -231,8 +231,17 @@ export function CreateToolFlow() {
     if (order?.projectId && isLoggedIn) {
       try {
         await deleteProject(order.projectId).unwrap();
-      } catch {
-        /* fallback to local remove */
+      } catch (err) {
+        const anyErr = err as any;
+        const status = anyErr?.status ?? anyErr?.originalStatus;
+        // During bulk delete, some deletes can race with state refresh; treat "not found" as already deleted.
+        if (status === 404) {
+          // Continue to remove from local state.
+        } else {
+          const msg = err instanceof Error ? err.message : "Failed to delete project";
+          setError(msg);
+          return;
+        }
       }
     }
     setOrders((prev) => prev.filter((o) => o.id !== orderId));

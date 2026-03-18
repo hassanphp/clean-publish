@@ -15,6 +15,32 @@ from app.utils.storage import generate_signed_read_url
 router = APIRouter(prefix="/api/v1/projects", tags=["projects"])
 
 
+def _maybe_wrap_base64_as_data_url(v: str | None, *, mime: str = "image/jpeg") -> str | None:
+    """
+    The frontend may send raw base64 (no `data:` prefix) into `original_url` /
+    `processed_url`. The projects UI uses these values directly as `img src`,
+    so we must wrap them as data URLs.
+    """
+    if not v:
+        return None
+    if v.startswith("data:") or v.startswith("http://") or v.startswith("https://"):
+        return v
+    # Keep object-storage-style URIs as-is (we sign them later if needed).
+    if "://" in v or v.startswith(("s3://", "gs://", "r2://")):
+        return v
+
+    vv = v.strip().replace("\n", "").replace("\r", "")
+    if len(vv) < 32:
+        return v
+
+    import re
+
+    # Base64 heuristic (accept standard + URL-safe chars).
+    if re.fullmatch(r"[A-Za-z0-9+/=_-]+", vv):
+        return f"data:{mime};base64,{vv}"
+    return v
+
+
 def _maybe_signed(url: str | None) -> str | None:
     """If url is from object storage (s3://, gs://, r2://), return a signed http(s) read URL.
     If it is already a data/http(s) URL, return as-is.
@@ -206,6 +232,8 @@ def delete_project(
     ).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
+    # Explicitly delete job images to avoid any ORM cascade edge-cases.
+    db.query(JobImage).filter(JobImage.project_id == project_id).delete()
     db.delete(project)
     db.commit()
     return None
@@ -231,8 +259,9 @@ def upsert_project_images(
         ji = JobImage(
             project_id=project_id,
             image_index=img.image_index,
-            original_url=img.original_url,
-            processed_url=img.processed_url,
+            # Ensure browser-renderable `img src` values.
+            original_url=_maybe_wrap_base64_as_data_url(img.original_url),
+            processed_url=_maybe_wrap_base64_as_data_url(img.processed_url),
             status=img.status,
         )
         db.add(ji)
