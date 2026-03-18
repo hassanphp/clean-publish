@@ -89,7 +89,9 @@ def main():
     frontend_demo = os.path.abspath(os.path.join(repo_root, "..", "ai-frontend", "public", "demo"))
     studios_dir = os.path.abspath(os.path.join(repo_root, "..", "ai-frontend", "public", "studios"))
     car_path = os.path.join(frontend_demo, "exterior-before.jpg")
-    studio_path = os.path.join(studios_dir, "studio-1.png")
+    # Allow overriding studio file via env or argv[1]
+    studio_basename = os.environ.get("SMOKE_STUDIO_FILE") or (sys.argv[1] if len(sys.argv) > 1 else "studio-1.png")
+    studio_path = studio_basename if os.path.isabs(studio_basename) else os.path.join(studios_dir, studio_basename)
     if not (os.path.exists(car_path) and os.path.exists(studio_path)):
         print("Demo exterior or studio image missing:")
         print("  car:", car_path)
