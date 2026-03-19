@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import Layout from "@/components/Layout";
 import {
   DashboardShell,
@@ -68,6 +68,7 @@ type ViewState =
 
 export function CreateToolFlow() {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const { theme } = useTheme();
   const { language } = useLanguage();
   const { totalCredits } = useCredits();
@@ -136,6 +137,7 @@ export function CreateToolFlow() {
   const [logs, setLogs] = useState<string[]>([]);
   const [results, setResults] = useState<ProcessedResult[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [streamComplete, setStreamComplete] = useState(false);
   const [targetStudioDescription, setTargetStudioDescription] = useState("");
   const [studioReferenceDataUri, setStudioReferenceDataUri] = useState<string | null>(null);
@@ -209,6 +211,10 @@ export function CreateToolFlow() {
   };
 
   const handleOrderSelect = (order: Order) => {
+    if (order.projectId && isLoggedIn) {
+      router.push(`/create/project/${order.projectId}`);
+      return;
+    }
     setCurrentOrder(order);
     if (order.jobs?.length && order.jobs.some((j) => j.processedImage)) {
       setResults(
@@ -287,8 +293,7 @@ export function CreateToolFlow() {
     setBranding((prev) => ({ ...prev, logo3dWallEnabled: !prev.logo3dWallEnabled }));
 
   const handleProjectNameContinue = async () => {
-    if (!projectName.trim()) return;
-    const title = projectName.trim();
+    const title = projectName.trim() || "Untitled";
     setError(null);
     if (isLoggedIn) {
       try {
@@ -348,6 +353,7 @@ export function CreateToolFlow() {
     setLogs([]);
     setResults([]);
     setError(null);
+    setSaveError(null);
     setStreamComplete(false);
     resultsRef.current = [];
 
@@ -421,12 +427,13 @@ export function CreateToolFlow() {
                     images: finalResults.map((r, i) => ({
                       image_index: i,
                       original_url: r.original_b64,
-                      processed_url: r.processed_b64,
+                      processed_url: r.processed_b64 ?? "",
                       status: "completed",
                     })),
                   }).unwrap();
-                } catch {
-                  /* ignore */
+                } catch (saveErr) {
+                  const msg = saveErr && typeof saveErr === "object" && "data" in saveErr && (saveErr as { data?: { detail?: string } }).data?.detail;
+                  setSaveError(msg ? `Failed to save to project: ${msg}` : "Failed to save images to project. They are available below.");
                 }
               }
             }
@@ -456,6 +463,7 @@ export function CreateToolFlow() {
     setLogs([]);
     setResults([]);
     setError(null);
+    setSaveError(null);
     setStreamComplete(false);
     setCurrentOrder(null);
     setTargetStudioDescription("");
@@ -570,7 +578,7 @@ export function CreateToolFlow() {
             </button>
             <button
               onClick={handleProjectNameContinue}
-              disabled={!projectName.trim() || isCreatingProject}
+              disabled={isCreatingProject}
               className="px-8 py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold disabled:opacity-50"
             >
               {isCreatingProject ? "Creating…" : "Continue"}
@@ -637,10 +645,13 @@ export function CreateToolFlow() {
               resultsCount={results.length}
               streamComplete={streamComplete}
               error={error}
+              images={images}
+              results={results}
               onViewResults={() => setView("results")}
               onStartOver={handleReset}
               t={t}
               theme={themeVal}
+              pipelineVersion={pipelineVersion}
             />
           </div>
         </div>
@@ -653,14 +664,29 @@ export function CreateToolFlow() {
       <Layout>
         <div className="min-h-screen bg-[var(--background)] text-[var(--foreground)]">
           <div className="mx-auto max-w-4xl px-4 py-12 sm:px-6 lg:px-8">
+            {saveError && (
+              <div className="mb-6 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-700 dark:text-amber-400">
+                {saveError}
+              </div>
+            )}
             <div className="flex items-center justify-between mb-8">
               <h2 className="text-2xl font-bold">Results</h2>
-              <button
-                onClick={handleReset}
-                className="rounded-xl border border-[var(--border)] bg-[var(--card)] px-6 py-2.5 font-medium"
-              >
-                Process more
-              </button>
+              <div className="flex gap-3">
+                {currentOrder?.projectId && (
+                  <a
+                    href={`/create/project/${currentOrder.projectId}`}
+                    className="rounded-xl border border-[var(--border)] bg-[var(--card)] px-6 py-2.5 font-medium hover:bg-[var(--card)]/80"
+                  >
+                    Open project
+                  </a>
+                )}
+                <button
+                  onClick={handleReset}
+                  className="rounded-xl border border-[var(--border)] bg-[var(--card)] px-6 py-2.5 font-medium"
+                >
+                  Process more
+                </button>
+              </div>
             </div>
             <ResultsGrid
               results={results}

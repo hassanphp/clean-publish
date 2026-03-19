@@ -564,7 +564,14 @@ def dynamic_prompt_node(state: GraphState) -> dict:
             preserve_rules = preserve_rules_v1
 
         if pipeline_version == "11":
-            # V11: OpenAI GPT Image 1.5 - anti-hallucination, correct pipeline per view_category
+            # V11: Virtual Detailing Studio - de-lighting, color lock, re-lighting
+            v11_detailing = (
+                " CRITICAL: Perform complete de-lighting. Remove all baked-in environmental reflections, "
+                "outdoor shadows, and sky reflections from the clearcoat and glass. Apply freshly washed, detailed, "
+                "high-gloss finish. ABSOLUTE COLOR LOCK: strictly preserve the exact original paint color and shade. "
+                "RE-LIGHTING: Generate photorealistic studio lighting, softbox specular highlights, and accurate floor "
+                "drop shadows matching the target studio. The car must look physically present in the new studio."
+            )
             color_hint = getattr(meta, "dominant_color", None) or ""
             v11_color = f"USED CAR: {color_hint}. Copy EXACT color - same shade, brightness, saturation. Washed clean but SAME color." if (color_hint and color_hint.lower() != "unknown") else "USED CAR: Copy EXACT color from original. Same shade, brightness, saturation. Washed clean but SAME color."
             comps_hint = ", ".join((meta.components or [])[:6]) if meta.components else ""
@@ -590,6 +597,8 @@ def dynamic_prompt_node(state: GraphState) -> dict:
                     f"CRITICAL: {v11_color} Preserve metallic, glossy paint. Center the car on the studio floor. "
                     f"Keep the car EXACTLY as it is - same model, bumper, fog lights. Preserve headlights, taillights, DRLs, wheel design, badges, license plate. "
                     f"Empty studio, no people. Subtle floor shadows. Keep full frame - do NOT crop or cut the car. Preserve padding around the car. "
+                    f"{v11_detailing} Avoid: outdoor reflections, trees in paint, sky in glass, baked sunlight, harsh outdoor shadows, "
+                    f"dirty clearcoat, dusty paint, color shift, cartoonish lighting, 3D render, CGI artifacts, floating car, mismatched lighting. "
                     f"{preserve_rules}"
                     f"{branding_instruction}"
                 )
@@ -802,7 +811,12 @@ def dynamic_prompt_node(state: GraphState) -> dict:
         if dealer_logo_b64 and meta.view_category == "exterior":
             pl["dealer_logo_b64"] = dealer_logo_b64
         if pipeline_version == "11" and meta.view_category == "exterior":
-            pl["negative_prompt"] = "matte, flat, dull paint, oversaturated, color shift, AI-generated, 3D render, over-processed, vibrant, new car look"
+            pl["negative_prompt"] = (
+                "outdoor reflections, trees reflected in paint, sky reflected in glass, baked-in sunlight, "
+                "harsh outdoor shadows, dirty clearcoat, dusty paint, color shift, changed paint color, "
+                "different hue, cartoonish lighting, 3D render, CGI artifacts, floating car, mismatched lighting physics, "
+                "matte, flat, dull paint, oversaturated, AI-generated, over-processed"
+            )
         if pipeline_version == "10" and meta.view_category == "exterior":
             pl["negative_prompt"] = "vibrant, glossy, new car, oversaturated, color shift, studio lighting, bright highlights, polished, dramatic shadows, artificial reflections, AI-generated, 3D render, over-processed"
         payloads.append(pl)

@@ -12,7 +12,7 @@ interface ProcessingProgressProps {
   error?: string;
 }
 
-function parseImageStatuses(logs: string[]): ImageProgressStatus[] {
+export function parseImageStatuses(logs: string[]): ImageProgressStatus[] {
   const statuses: ImageProgressStatus[] = [];
 
   for (const log of logs) {
