@@ -98,8 +98,8 @@ def _crop_to_aspect_ratio_4_3(b64_str: str) -> str:
 
 
 def _resize_output(b64_str: str, max_dim: int | None = None, quality: int | None = None) -> str:
-    """Resize output to match modal display (390px). Saves bandwidth."""
-    max_dim = max_dim or int(os.getenv("OUTPUT_MAX_DIM", "390"))
+    """Resize output to match modal display (732px). Saves bandwidth."""
+    max_dim = max_dim or int(os.getenv("OUTPUT_MAX_DIM", "732"))
     quality = quality or int(os.getenv("OUTPUT_JPEG_QUALITY", "92"))
     try:
         img_bytes = base64.b64decode(b64_str.split(",", 1)[-1] if "," in b64_str else b64_str)
