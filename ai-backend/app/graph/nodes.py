@@ -98,8 +98,8 @@ def _crop_to_aspect_ratio_4_3(b64_str: str) -> str:
 
 
 def _resize_output(b64_str: str, max_dim: int | None = None, quality: int | None = None) -> str:
-    """Resize output for storage/bandwidth. 600px max width, high quality (92) - crisp at preview size."""
-    max_dim = max_dim or int(os.getenv("OUTPUT_MAX_DIM", "600"))
+    """Resize output to match modal display (390px). Saves bandwidth."""
+    max_dim = max_dim or int(os.getenv("OUTPUT_MAX_DIM", "390"))
     quality = quality or int(os.getenv("OUTPUT_JPEG_QUALITY", "92"))
     try:
         img_bytes = base64.b64decode(b64_str.split(",", 1)[-1] if "," in b64_str else b64_str)
@@ -589,7 +589,7 @@ def dynamic_prompt_node(state: GraphState) -> dict:
                     f"If input is side profile - output is side profile. If input is front three-quarter - output is front three-quarter. NEVER rotate the car. "
                     f"CRITICAL: {v11_color} Preserve metallic, glossy paint. Center the car on the studio floor. "
                     f"Keep the car EXACTLY as it is - same model, bumper, fog lights. Preserve headlights, taillights, DRLs, wheel design, badges, license plate. "
-                    f"Empty studio, no people. Subtle floor shadows. Output 4:3 aspect ratio, car fills frame. "
+                    f"Empty studio, no people. Subtle floor shadows. Keep full frame - do NOT crop or cut the car. Preserve padding around the car. "
                     f"{preserve_rules}"
                     f"{branding_instruction}"
                 )
@@ -1554,10 +1554,10 @@ async def vertex_execution_node_async(
                     dominant_color="unknown",
                     suggested_edit_mode="product-image",
                 )
-            # Interior + exterior: crop to 4:3 (fill frame, avoid shrunk car with white space)
-            if getattr(meta, "view_category", None) in ("interior", "exterior"):
+            # Interior only: crop to 4:3. Exterior: NO crop - preserve full studio, avoid cutting car edges
+            if getattr(meta, "view_category", None) == "interior":
                 processed_b64 = _crop_to_aspect_ratio_4_3(processed_b64)
-            # Resize output to save cost (OUTPUT_MAX_DIM default 1536)
+            # Resize to match modal display (390px width)
             processed_b64 = _resize_output(processed_b64)
             model_info = _get_model_info(p)
             results.append(
