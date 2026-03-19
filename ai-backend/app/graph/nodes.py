@@ -98,9 +98,9 @@ def _crop_to_aspect_ratio_4_3(b64_str: str) -> str:
 
 
 def _resize_output(b64_str: str, max_dim: int | None = None, quality: int | None = None) -> str:
-    """Resize output to cap max dimension and re-encode. Saves cost (OUTPUT_MAX_DIM default 1536)."""
-    max_dim = max_dim or int(os.getenv("OUTPUT_MAX_DIM", "1536"))
-    quality = quality or int(os.getenv("OUTPUT_JPEG_QUALITY", "85"))
+    """Resize output for storage/bandwidth. 600px max width, high quality (92) - crisp at preview size."""
+    max_dim = max_dim or int(os.getenv("OUTPUT_MAX_DIM", "600"))
+    quality = quality or int(os.getenv("OUTPUT_JPEG_QUALITY", "92"))
     try:
         img_bytes = base64.b64decode(b64_str.split(",", 1)[-1] if "," in b64_str else b64_str)
         nparr = np.frombuffer(img_bytes, np.uint8)
