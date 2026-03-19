@@ -10,6 +10,10 @@ class AutomotiveImageMetadata(BaseModel):
     view_category: Literal["interior", "exterior", "detail"] = Field(
         description="Primary view: interior cabin, exterior shot, or detail/close-up"
     )
+    camera_angle: str = Field(
+        default="unknown",
+        description="Exterior camera angle: side_profile, front_three_quarter, rear_three_quarter, front, rear",
+    )
     components: list[str] = Field(
         default_factory=list,
         description="Detected components: leather, rims, screens, dashboard, seats, etc.",

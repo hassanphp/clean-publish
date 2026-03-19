@@ -129,11 +129,14 @@ ANALYSIS_PROMPT = """You are an expert automotive photography analyst. Analyze t
 Return ONLY valid JSON matching this exact schema (no markdown, no extra text):
 {
   "view_category": "interior" | "exterior" | "detail",
+  "camera_angle": "side_profile" | "front_three_quarter" | "rear_three_quarter" | "front" | "rear" | "unknown",
   "components": ["list", "of", "detected", "components"],
   "existing_lighting": "natural" | "studio" | "mixed" | "dim" | "harsh" | "soft" | "unknown",
   "dominant_color": "string color name",
   "suggested_edit_mode": "product-image" | "inpainting-insert" | "outpainting"
 }
+
+camera_angle: For exterior only. "side_profile" = car seen from the side (full side view). "front_three_quarter" = front corner visible. "rear_three_quarter" = rear corner visible. "front" = straight front. "rear" = straight rear.
 
 CRITICAL RULES - MUST FOLLOW:
 - "interior" = The PRIMARY subject is INSIDE the car. Use interior when you see: seats (front or rear), trunk/cargo interior, center console, gear shifter, door panel, dashboard, steering wheel, rear seat, parcel shelf, carpet, cargo area. ANY shot taken from inside looking in = interior.
@@ -416,6 +419,11 @@ def _normalize_metadata(data: dict) -> AutomotiveImageMetadata:
     view = (data.get("view_category") or "").lower()
     if view not in ("interior", "exterior", "detail"):
         data["view_category"] = "exterior"
+    angle = (data.get("camera_angle") or "unknown").lower().replace(" ", "_")
+    if angle not in ("side_profile", "front_three_quarter", "rear_three_quarter", "front", "rear", "unknown"):
+        data["camera_angle"] = "unknown"
+    else:
+        data["camera_angle"] = angle
     comps = data.get("components") or []
     # Validation: if classifier said exterior but components show interior -> override to interior
     if view == "exterior" and _components_suggest_interior(comps):
@@ -571,12 +579,16 @@ def dynamic_prompt_node(state: GraphState) -> dict:
                     f"{preserve_rules}"
                 )
             elif meta.view_category == "exterior":
+                angle_hint = getattr(meta, "camera_angle", None) or "unknown"
+                angle_rule = f"Input is {angle_hint.replace('_', ' ')} - output MUST be {angle_hint.replace('_', ' ')}. " if angle_hint != "unknown" else ""
                 prompt = (
                     f"INPUT TYPE: EXTERIOR. The image shows a full car from outside. "
                     f"Replace the background with the studio from the second reference: {target_short}. "
+                    f"ABSOLUTE RULE - PRESERVE CAMERA ANGLE: Output MUST show the car from the EXACT same direction as input. "
+                    f"{angle_rule}"
+                    f"If input is side profile - output is side profile. If input is front three-quarter - output is front three-quarter. NEVER rotate the car. "
                     f"CRITICAL: {v11_color} Preserve metallic, glossy paint. Center the car on the studio floor. "
-                    f"Keep the car EXACTLY as it is - same model, bumper, fog lights, every detail. Same view (rear=rear, front=front), same angle. "
-                    f"Preserve headlights, taillights, DRLs, wheel design, badges, license plate. "
+                    f"Keep the car EXACTLY as it is - same model, bumper, fog lights. Preserve headlights, taillights, DRLs, wheel design, badges, license plate. "
                     f"Empty studio, no people. Subtle floor shadows. Output 4:3 aspect ratio, car fills frame. "
                     f"{preserve_rules}"
                     f"{branding_instruction}"
